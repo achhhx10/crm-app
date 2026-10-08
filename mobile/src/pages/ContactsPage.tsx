@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Phone, Plus, SlidersHorizontal, Search, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
 import { Page } from '../components/Page';
-import { Button, Card, EmptyState, Input, Select, Sheet, Field, StageBadge } from '../components/ui';
+import { Button, Card, EmptyState, Input, Select, Sheet, Field, StageBadge, SkeletonList } from '../components/ui';
 
 const PAGE_SIZE = 20;
 
@@ -102,7 +102,7 @@ export function ContactsPage() {
       </div>
 
       {loading ? (
-        <p className="text-center text-muted-foreground py-10">Chargement…</p>
+        <SkeletonList rows={6} />
       ) : items.length === 0 ? (
         <EmptyState icon={<Search size={36} />} title="Aucun prospect" hint="Modifiez la recherche ou ajoutez-en un." />
       ) : (
@@ -113,8 +113,9 @@ export function ContactsPage() {
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-[16px] truncate">{c.businessName}</p>
-                    <p className="text-[14px] text-muted-foreground truncate">
+                    <p className="text-sm text-muted-foreground truncate">
                       {[c.contactName, c.city].filter(Boolean).join(' · ') || '—'}
+                      {c.googleRating ? <span className="font-mono-num"> · ★{c.googleRating}</span> : ''}
                     </p>
                     <div className="mt-2">
                       <StageBadge stage={c.stage} />

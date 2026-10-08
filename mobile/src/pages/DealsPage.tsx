@@ -87,15 +87,15 @@ export function DealsPage() {
     >
       <div className="grid grid-cols-2 gap-2">
         <Card className="text-center">
-          <p className="text-[24px] font-bold">{stats?.signed ?? '—'}</p>
+          <p className="font-mono-num text-[24px] font-bold">{stats?.signed ?? '—'}</p>
           <p className="text-[13px] text-muted-foreground">Signés</p>
         </Card>
         <Card className="text-center">
-          <p className="text-[24px] font-bold">{stats ? `${stats.closingRate}%` : '—'}</p>
+          <p className="font-mono-num text-[24px] font-bold">{stats ? `${stats.closingRate}%` : '—'}</p>
           <p className="text-[13px] text-muted-foreground">Closing</p>
         </Card>
         <Card className="col-span-2 text-center">
-          <p className="text-[24px] font-bold">{stats ? `${Number(stats.totalRevenue).toLocaleString('fr-FR')} €` : '—'}</p>
+          <p className="font-mono-num text-[24px] font-bold">{stats ? `${Number(stats.totalRevenue).toLocaleString('fr-FR')} €` : '—'}</p>
           <p className="text-[13px] text-muted-foreground">Revenu signé</p>
         </Card>
       </div>

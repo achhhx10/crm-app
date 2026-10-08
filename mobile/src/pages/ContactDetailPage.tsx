@@ -61,7 +61,11 @@ export function ContactDetailPage() {
   if (loading) {
     return (
       <Page title="Prospect" back>
-        <p className="text-center text-muted-foreground py-10">Chargement…</p>
+        <div className="bg-card border border-border rounded-lg p-4" aria-busy="true" aria-label="Chargement">
+          <div className="skeleton h-6 w-2/3 mb-3" />
+          <div className="skeleton h-4 w-1/2 mb-2" />
+          <div className="skeleton h-4 w-1/3" />
+        </div>
       </Page>
     );
   }
@@ -109,7 +113,7 @@ export function ContactDetailPage() {
           {contact.phone && (
             <p className="flex items-center gap-2">
               <Phone size={16} className="text-muted-foreground shrink-0" />
-              <a href={`tel:${contact.phone}`} className="break-all">{contact.phone}</a>
+              <a href={`tel:${contact.phone}`} className="break-all font-mono-num">{contact.phone}</a>
             </p>
           )}
           {contact.email && (

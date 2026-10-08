@@ -57,14 +57,22 @@ export function PipelinePage() {
   return (
     <Page title="Pipeline">
       {loading ? (
-        <p className="text-center text-muted-foreground py-10">Chargement…</p>
+        <div className="flex gap-3 overflow-hidden" aria-busy="true" aria-label="Chargement">
+          {[0, 1].map((i) => (
+            <div key={i} className="min-w-[270px] bg-card border border-border rounded-lg p-3">
+              <div className="skeleton h-4 w-1/2 mb-3" />
+              <div className="skeleton h-16 w-full mb-2" />
+              <div className="skeleton h-16 w-full" />
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory -mx-4 px-4 pb-2">
           {STAGES.map((stage) => (
             <section key={stage} className="min-w-[270px] max-w-[270px] snap-start shrink-0">
               <div className="flex items-center justify-between mb-2 px-1">
                 <h2 className="font-bold text-[15px]">{stageLabel(stage)}</h2>
-                <span className="text-[13px] font-semibold text-muted-foreground bg-muted rounded-full px-2.5 py-0.5">
+                <span className="font-mono-num text-[13px] font-semibold text-muted-foreground bg-muted rounded-full px-2.5 py-0.5">
                   {(groups[stage] || []).length}
                 </span>
               </div>

@@ -24,6 +24,7 @@ export default {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
+        success: 'hsl(var(--success))',
       },
       borderRadius: {
         lg: '0.75rem',

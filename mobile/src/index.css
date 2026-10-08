@@ -1,29 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
+
 :root {
-  --background: 248 250 252;
-  --foreground: 15 23 42;
+  --background: 248 247 245;
+  --foreground: 26 32 46;
   --card: 255 255 255;
-  --card-foreground: 15 23 42;
-  --primary: 37 99 235;
+  --card-foreground: 26 32 46;
+  --primary: 217 119 6;
   --primary-foreground: 255 255 255;
-  --muted: 241 245 249;
-  --muted-foreground: 100 116 139;
-  --border: 226 232 240;
+  --muted: 235 231 225;
+  --muted-foreground: 100 106 120;
+  --border: 228 224 216;
   --destructive: 220 38 38;
   --destructive-foreground: 255 255 255;
+  --success: 22 163 74;
 }
 
 .dark {
-  --background: 2 6 23;
+  --background: 13 18 32;
   --foreground: 226 232 240;
-  --card: 15 23 42;
+  --card: 20 27 45;
   --card-foreground: 226 232 240;
-  --primary: 59 130 246;
-  --primary-foreground: 255 255 255;
+  --primary: 245 158 11;
+  --primary-foreground: 26 32 46;
   --muted: 30 41 59;
   --muted-foreground: 148 163 184;
-  --border: 30 41 59;
+  --border: 38 45 66;
   --destructive: 248 113 113;
-  --destructive-foreground: 255 255 255;
+  --destructive-foreground: 26 32 46;
+  --success: 74 222 128;
 }
 
 * {
@@ -33,8 +37,19 @@
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, system-ui, sans-serif;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono-num {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+h1, h2 {
+  text-wrap: balance;
+  letter-spacing: -0.01em;
 }
 
 input, select, textarea {
@@ -44,6 +59,18 @@ input, select, textarea {
   input, select, textarea {
     font-size: 14px;
   }
+}
+
+.tactile {
+  transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.15s ease;
+}
+.tactile:active {
+  transform: scale(0.98);
+}
+
+:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -56,4 +83,40 @@ input, select, textarea {
 
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(24px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.sheet-anim {
+  animation: sheet-up 0.22s cubic-bezier(0.32, 0.72, 0.35, 1);
+}
+
+@keyframes toast-in {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.toast-anim {
+  animation: toast-in 0.2s ease-out;
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--border)) 50%, hsl(var(--muted)) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-anim, .toast-anim, .skeleton {
+    animation: none;
+  }
+  .tactile {
+    transition: none;
+  }
 }

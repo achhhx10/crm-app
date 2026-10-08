@@ -63,19 +63,19 @@ export function CallsPage() {
     >
       <div className="grid grid-cols-2 gap-2">
         <Card className="text-center">
-          <p className="text-[24px] font-bold">{stats?.today ?? '—'}</p>
+          <p className="font-mono-num text-[24px] font-bold">{stats?.today ?? '—'}</p>
           <p className="text-[13px] text-muted-foreground">Aujourd'hui</p>
         </Card>
         <Card className="text-center">
-          <p className="text-[24px] font-bold">{stats?.month ?? '—'}</p>
+          <p className="font-mono-num text-[24px] font-bold">{stats?.month ?? '—'}</p>
           <p className="text-[13px] text-muted-foreground">Ce mois</p>
         </Card>
         <Card className="text-center">
-          <p className="text-[24px] font-bold">{stats?.rdvObtained ?? '—'}</p>
+          <p className="font-mono-num text-[24px] font-bold">{stats?.rdvObtained ?? '—'}</p>
           <p className="text-[13px] text-muted-foreground">RDV obtenus</p>
         </Card>
         <Card className="text-center">
-          <p className="text-[24px] font-bold">{stats ? `${stats.connectionRate}%` : '—'}</p>
+          <p className="font-mono-num text-[24px] font-bold">{stats ? `${stats.connectionRate}%` : '—'}</p>
           <p className="text-[13px] text-muted-foreground">Aboutissement</p>
         </Card>
       </div>
