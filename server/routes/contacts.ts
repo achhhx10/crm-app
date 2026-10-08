@@ -85,7 +85,12 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       conditions.push(sql`${contacts.googleRating} >= ${Number(minRating)}`);
     }
     if (hasSite && typeof hasSite === 'string' && hasSite !== 'all') {
-      conditions.push(eq(contacts.hasSite, hasSite));
+      // Legacy imports store 'non' for "no site": treat it as 'pas_de_site'.
+      conditions.push(
+        hasSite === 'pas_de_site'
+          ? inArray(contacts.hasSite, ['pas_de_site', 'non'])
+          : eq(contacts.hasSite, hasSite)
+      );
     }
     if (reach === 'true') {
       conditions.push(sql`${contacts.phone} IS NOT NULL AND ${contacts.phone} != ''`);
@@ -203,7 +208,7 @@ router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) =>
     if (stage && typeof stage === 'string') conditions.push(eq(contacts.stage, stage));
     if (activity && typeof activity === 'string') conditions.push(eq(contacts.activity, activity));
     if (minRating && typeof minRating === 'string') conditions.push(sql`${contacts.googleRating} >= ${Number(minRating)}`);
-    if (hasSite && typeof hasSite === 'string' && hasSite !== 'all') conditions.push(eq(contacts.hasSite, hasSite));
+    if (hasSite && typeof hasSite === 'string' && hasSite !== 'all') conditions.push(hasSite === 'pas_de_site' ? inArray(contacts.hasSite, ['pas_de_site', 'non']) : eq(contacts.hasSite, hasSite));
     if (reach === 'true') conditions.push(sql`${contacts.phone} IS NOT NULL AND ${contacts.phone} != ''`);
     if (reach === 'false') conditions.push(sql`(${contacts.phone} IS NULL OR ${contacts.phone} = '')`);
     if (city === '__empty__') conditions.push(sql`(${contacts.city} IS NULL OR ${contacts.city} = '')`);
@@ -287,7 +292,7 @@ router.post('/', authMiddleware, validate(contactSchema), async (req: AuthReques
       city: city || null,
       googleRating: googleRating ?? null,
       googleReviews: googleReviews ?? null,
-      hasSite: hasSite || 'non',
+      hasSite: hasSite || 'pas_de_site',
       siteUrl: siteUrl || null,
       siteStatus: siteStatus || 'pas_de_site',
       source: source || 'google_maps',

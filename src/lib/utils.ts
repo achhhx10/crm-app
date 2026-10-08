@@ -78,7 +78,7 @@ export const OBJECTIONS: Record<string, string> = {
 
 export function opportunityScore(c: { hasSite?: string | null; phone?: string | null; googleRating?: number | null; googleReviews?: number | null }): number {
   let score = 0;
-  if (c.hasSite === 'pas_de_site') score += 2;
+  if (c.hasSite === 'pas_de_site' || c.hasSite === 'non') score += 2;
   if (c.phone) score += 2;
   if (c.googleRating != null && c.googleRating >= 4.5) score += 1;
   if (c.googleReviews != null && c.googleReviews >= 20) score += 1;
