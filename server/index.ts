@@ -69,7 +69,7 @@ app.use(express.json({ limit: '1mb' }));
 
 // Health check (before auth middleware)
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), version: '1.0.0' });
+  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), version: '1.1.0' });
 });
 
 // API routes
