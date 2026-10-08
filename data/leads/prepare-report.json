@@ -1,0 +1,9 @@
+{
+  "inputRows": 96130,
+  "uniquePlaceIds": 88075,
+  "skippedDupPlaceIds": 8055,
+  "outputRows": 88075,
+  "badPhoneBugRows": 38,
+  "csvPath": "/Users/devops/Desktop/business/websites/leads_france/output/all_20260820.csv",
+  "outCsv": "/Users/devops/Desktop/business/websites/crm-app/data/leads/prepared.csv"
+}

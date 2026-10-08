@@ -1,0 +1,9 @@
+{
+  "crmContacts": 1745,
+  "leadsAfterDedup": 88075,
+  "skip_place_id": 0,
+  "skip_phone": 2127,
+  "skip_name_city": 98,
+  "toImport": 85850,
+  "toImportCsv": "/Users/devops/Desktop/business/websites/crm-app/data/leads/to-import.csv"
+}

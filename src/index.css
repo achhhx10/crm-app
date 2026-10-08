@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 222 47% 11%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 33% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 40 20% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 38 92% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 56% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 222 47% 11%;
+    --radius: 0.5rem;
+    --stage-1: 220 14% 93%;
+    --stage-1-fg: 220 9% 40%;
+    --stage-2: 214 70% 94%;
+    --stage-2-fg: 214 70% 35%;
+    --stage-3: 43 74% 93%;
+    --stage-3-fg: 38 70% 30%;
+    --stage-4: 270 50% 93%;
+    --stage-4-fg: 270 50% 35%;
+    --stage-5: 28 78% 92%;
+    --stage-5-fg: 25 70% 32%;
+    --stage-6: 152 56% 90%;
+    --stage-6-fg: 152 56% 22%;
+    --stage-7: 0 68% 93%;
+    --stage-7-fg: 0 68% 32%;
+  }
+
+  .dark {
+    --background: 222 50% 6%;
+    --foreground: 210 40% 96%;
+    --card: 222 40% 9%;
+    --card-foreground: 210 40% 96%;
+    --primary: 38 92% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 30% 14%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 222 25% 14%;
+    --muted-foreground: 215 15% 60%;
+    --accent: 38 92% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 63% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 50% 35%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 85% 42%;
+    --warning-foreground: 0 0% 100%;
+    --border: 222 25% 16%;
+    --input: 222 25% 16%;
+    --ring: 38 92% 50%;
+    --stage-1: 222 20% 14%;
+    --stage-1-fg: 215 15% 65%;
+    --stage-2: 214 45% 16%;
+    --stage-2-fg: 214 60% 72%;
+    --stage-3: 43 50% 16%;
+    --stage-3-fg: 40 65% 72%;
+    --stage-4: 270 30% 16%;
+    --stage-4-fg: 270 50% 78%;
+    --stage-5: 28 50% 16%;
+    --stage-5-fg: 30 65% 72%;
+    --stage-6: 152 40% 14%;
+    --stage-6-fg: 152 55% 70%;
+    --stage-7: 0 40% 16%;
+    --stage-7-fg: 0 60% 72%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Tabular numbers for data-heavy areas */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Kanban drag styles */
+.dragging {
+  opacity: 0.6;
+  transform: scale(1.05) rotate(-1deg);
+  box-shadow: 0 12px 24px -8px hsl(var(--foreground) / 0.25);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
