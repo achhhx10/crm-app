@@ -1,8 +1,8 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { contacts } from '../db/schema.js';
-import { eq, like, desc, asc, sql, and, count, or, isNull } from 'drizzle-orm';
+import { eq, desc, asc, sql, and, count, or, isNull, inArray } from 'drizzle-orm';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -24,6 +24,8 @@ const contactSchema = z.object({
   notes: z.string().optional().nullable(),
   assignedTo: z.number().int().optional()
 }).partial();
+
+const VALID_STAGES = ['identifie', 'contacte', 'interesse', 'rdv_programme', 'proposition_envoyee', 'signe', 'perdu'];
 
 const router = Router();
 
@@ -49,10 +51,12 @@ function pickAllowedFields(body: any, fields: string[]) {
   return picked;
 }
 
-router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, sortBy, sortDir, page = '1', limit = '50' } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
+    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, sortBy, sortDir } = req.query;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
 
     let query = db.select().from(contacts);
     let countQuery = db.select({ value: count() }).from(contacts);
@@ -136,23 +140,23 @@ router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
       orderedQuery = query.orderBy(sortDirection(sortCol)) as typeof query;
     }
 
-    const allContacts = orderedQuery.limit(Number(limit)).offset(offset).all();
-    const total = countQuery.get()?.value || 0;
+    const allContacts = await orderedQuery.limit(limit).offset(offset);
+    const total = (await countQuery)[0]?.value ?? 0;
 
-    res.json({ contacts: allContacts, total, page: Number(page), limit: Number(limit) });
+    res.json({ contacts: allContacts, total, page, limit });
   } catch (error) {
     console.error('Get contacts error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.get('/activities', authMiddleware, (_req, res) => {
+router.get('/activities', authMiddleware, async (_req, res) => {
   try {
-    const activities = db
+    const rows = await db
       .select({ activity: contacts.activity })
       .from(contacts)
-      .where(sql`${contacts.activity} IS NOT NULL AND ${contacts.activity} != ''`)
-      .all()
+      .where(sql`${contacts.activity} IS NOT NULL AND ${contacts.activity} != ''`);
+    const activities = rows
       .map((r: any) => r.activity)
       .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
       .sort();
@@ -163,13 +167,13 @@ router.get('/activities', authMiddleware, (_req, res) => {
   }
 });
 
-router.get('/cities', authMiddleware, (_req, res) => {
+router.get('/cities', authMiddleware, async (_req, res) => {
   try {
-    const cities = db
+    const rows = await db
       .select({ city: contacts.city })
       .from(contacts)
-      .where(sql`${contacts.city} IS NOT NULL AND ${contacts.city} != ''`)
-      .all()
+      .where(sql`${contacts.city} IS NOT NULL AND ${contacts.city} != ''`);
+    const cities = rows
       .map((r: any) => r.city)
       .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
       .sort();
@@ -180,7 +184,7 @@ router.get('/cities', authMiddleware, (_req, res) => {
   }
 });
 
-router.get('/export', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { search, stage, activity, minRating, hasSite, city, reach, minReviews, hasReviews } = req.query;
 
@@ -211,21 +215,27 @@ router.get('/export', authMiddleware, (req: AuthRequest, res: Response) => {
       query = query.where(and(...conditions)) as typeof query;
     }
 
-    const allContacts = query.all();
+    const allContacts = await query.limit(10000);
+
+    const sanitize = (v: any) => {
+      const s = String(v ?? '');
+      // Prevent CSV formula injection
+      return /^[=+\-@]/.test(s) ? `'${s}` : s;
+    };
 
     const header = 'Entreprise,Contact,Téléphone,Email,Activité,Ville,Note Google,Avis,Site,Stage\n';
     const rows = allContacts.map((c: any) =>
       [
-        `"${(c.businessName || '').replace(/"/g, '""')}"`,
-        `"${(c.contactName || '').replace(/"/g, '""')}"`,
-        `"${(c.phone || '').replace(/"/g, '""')}"`,
-        `"${(c.email || '').replace(/"/g, '""')}"`,
-        `"${(c.activity || '').replace(/"/g, '""')}"`,
-        `"${(c.city || '').replace(/"/g, '""')}"`,
+        `"${sanitize(c.businessName).replace(/"/g, '""')}"`,
+        `"${sanitize(c.contactName || '').replace(/"/g, '""')}"`,
+        `"${sanitize(c.phone || '').replace(/"/g, '""')}"`,
+        `"${sanitize(c.email || '').replace(/"/g, '""')}"`,
+        `"${sanitize(c.activity || '').replace(/"/g, '""')}"`,
+        `"${sanitize(c.city || '').replace(/"/g, '""')}"`,
         c.googleRating || '',
         c.googleReviews || '',
-        `"${(c.hasSite || '').replace(/"/g, '""')}"`,
-        `"${(c.stage || '').replace(/"/g, '""')}"`,
+        `"${sanitize(c.hasSite || '').replace(/"/g, '""')}"`,
+        `"${sanitize(c.stage || '').replace(/"/g, '""')}"`,
       ].join(',')
     ).join('\n');
 
@@ -238,9 +248,9 @@ router.get('/export', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const contact = db.select().from(contacts).where(eq(contacts.id, Number(req.params.id))).get();
+    const contact = (await db.select().from(contacts).where(eq(contacts.id, Number(req.params.id))))[0];
     if (!contact) {
       res.status(404).json({ error: 'Prospect non trouvé' });
       return;
@@ -255,7 +265,7 @@ router.get('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/', authMiddleware, validate(contactSchema), (req: AuthRequest, res: Response) => {
+router.post('/', authMiddleware, validate(contactSchema), async (req: AuthRequest, res: Response) => {
   try {
     const {
       businessName, contactName, phone, email, activity, city,
@@ -268,15 +278,15 @@ router.post('/', authMiddleware, validate(contactSchema), (req: AuthRequest, res
       return;
     }
 
-    const result = db.insert(contacts).values({
+    const [contact] = await db.insert(contacts).values({
       businessName,
       contactName: contactName || null,
       phone: phone || null,
       email: email || null,
       activity: activity || null,
       city: city || null,
-      googleRating: googleRating || null,
-      googleReviews: googleReviews || null,
+      googleRating: googleRating ?? null,
+      googleReviews: googleReviews ?? null,
       hasSite: hasSite || 'non',
       siteUrl: siteUrl || null,
       siteStatus: siteStatus || 'pas_de_site',
@@ -285,9 +295,7 @@ router.post('/', authMiddleware, validate(contactSchema), (req: AuthRequest, res
       assignedTo: req.user!.userId,
       objection: objection || null,
       notes: notes || null,
-    }).run();
-
-    const contact = db.select().from(contacts).where(eq(contacts.id, Number(result.lastInsertRowid))).get();
+    }).returning();
     res.json(contact);
   } catch (error) {
     console.error('Create contact error:', error);
@@ -295,28 +303,38 @@ router.post('/', authMiddleware, validate(contactSchema), (req: AuthRequest, res
   }
 });
 
-router.put('/bulk-stage', authMiddleware, (req: AuthRequest, res: Response) => {
+router.put('/bulk-stage', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { ids, stage } = req.body;
-    if (!ids || !Array.isArray(ids) || !stage) {
+    if (!ids || !Array.isArray(ids) || ids.length === 0 || !stage) {
       res.status(400).json({ error: 'ids (array) and stage required' });
       return;
     }
+    if (!VALID_STAGES.includes(stage)) {
+      res.status(400).json({ error: 'Stage invalide' });
+      return;
+    }
+    const numericIds = [...new Set(ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0))];
+    if (numericIds.length === 0) {
+      res.status(400).json({ error: 'ids invalides' });
+      return;
+    }
 
-    const targetIds = isAdmin(req) ? ids : db.select({ id: contacts.id }).from(contacts)
-      .where(and(
-        sql`${contacts.id} IN (${sql.join(ids.map((id: number) => sql`${id}`), sql`, `)})`,
-        ownershipCondition(req.user!.userId),
-      )).all().map((r: any) => r.id);
+    let targetIds: number[];
+    if (isAdmin(req)) {
+      targetIds = numericIds;
+    } else {
+      const rows = await db.select({ id: contacts.id }).from(contacts)
+        .where(and(inArray(contacts.id, numericIds), ownershipCondition(req.user!.userId)));
+      targetIds = rows.map((r) => r.id);
+    }
 
     if (targetIds.length === 0) {
       res.json({ success: true, updated: 0 });
       return;
     }
 
-    db.update(contacts).set({ stage, updatedAt: new Date() }).where(
-      sql`${contacts.id} IN (${sql.join(targetIds.map((id: number) => sql`${id}`), sql`, `)})`
-    ).run();
+    await db.update(contacts).set({ stage, updatedAt: new Date() }).where(inArray(contacts.id, targetIds));
     res.json({ success: true, updated: targetIds.length });
   } catch (error) {
     console.error('Bulk stage error:', error);
@@ -324,10 +342,10 @@ router.put('/bulk-stage', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.put('/:id', authMiddleware, validate(contactSchema.partial()), (req: AuthRequest, res: Response) => {
+router.put('/:id', authMiddleware, validate(contactSchema.partial()), async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const existing = db.select().from(contacts).where(eq(contacts.id, id)).get();
+    const existing = (await db.select().from(contacts).where(eq(contacts.id, id)))[0];
     if (!existing) {
       res.status(404).json({ error: 'Prospect non trouvé' });
       return;
@@ -342,12 +360,10 @@ router.put('/:id', authMiddleware, validate(contactSchema.partial()), (req: Auth
       ? pickAllowedFields(req.body, [...CONTACT_UPDATE_FIELDS, 'assignedTo'])
       : pickAllowedFields(req.body, CONTACT_UPDATE_FIELDS);
 
-    db.update(contacts).set({
+    const [contact] = await db.update(contacts).set({
       ...allowed,
       updatedAt: new Date(),
-    }).where(eq(contacts.id, id)).run();
-
-    const contact = db.select().from(contacts).where(eq(contacts.id, id)).get();
+    }).where(eq(contacts.id, id)).returning();
     res.json(contact);
   } catch (error) {
     console.error('Update contact error:', error);
@@ -355,27 +371,34 @@ router.put('/:id', authMiddleware, validate(contactSchema.partial()), (req: Auth
   }
 });
 
-router.delete('/bulk', authMiddleware, requireRole('admin'), (_req, res) => {
+router.delete('/bulk', authMiddleware, requireRole('admin'), async (_req, res) => {
   try {
     const { ids } = _req.body;
-    if (!ids || !Array.isArray(ids)) {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
       res.status(400).json({ error: 'ids (array) required' });
       return;
     }
-    db.delete(contacts).where(
-      sql`${contacts.id} IN (${sql.join(ids.map((id: number) => sql`${id}`), sql`, `)})`
-    ).run();
-    res.json({ success: true, deleted: ids.length });
+    const numericIds = [...new Set(ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0))];
+    if (numericIds.length === 0) {
+      res.status(400).json({ error: 'ids invalides' });
+      return;
+    }
+    const deleted = await db.delete(contacts).where(inArray(contacts.id, numericIds)).returning({ id: contacts.id });
+    res.json({ success: true, deleted: deleted.length });
   } catch (error) {
     console.error('Bulk delete error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.delete('/:id', authMiddleware, requireRole('admin'), (_req, res) => {
+router.delete('/:id', authMiddleware, requireRole('admin'), async (_req, res) => {
   try {
     const id = Number(_req.params.id);
-    db.delete(contacts).where(eq(contacts.id, id)).run();
+    const deleted = await db.delete(contacts).where(eq(contacts.id, id)).returning({ id: contacts.id });
+    if (deleted.length === 0) {
+      res.status(404).json({ error: 'Prospect non trouvé' });
+      return;
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });

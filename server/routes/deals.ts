@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { deals } from '../db/schema.js';
@@ -23,7 +23,7 @@ function isAdmin(req: AuthRequest): boolean {
 
 const DEAL_UPDATE_FIELDS = ['contactId', 'amount', 'siteType', 'status'];
 
-router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 20));
@@ -31,13 +31,13 @@ router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
 
     let allDeals, totalResult;
     if (isAdmin(req)) {
-      allDeals = db.select().from(deals).orderBy(desc(deals.createdAt)).limit(limit).offset(offset).all();
-      totalResult = db.select({ value: count() }).from(deals).get()?.value || 0;
+      allDeals = await db.select().from(deals).orderBy(desc(deals.createdAt)).limit(limit).offset(offset);
+      totalResult = (await db.select({ value: count() }).from(deals))[0]?.value ?? 0;
     } else {
-      allDeals = db.select().from(deals)
+      allDeals = await db.select().from(deals)
         .where(eq(deals.assignedTo, req.user!.userId))
-        .orderBy(desc(deals.createdAt)).limit(limit).offset(offset).all();
-      totalResult = db.select({ value: count() }).from(deals).where(eq(deals.assignedTo, req.user!.userId)).get()?.value || 0;
+        .orderBy(desc(deals.createdAt)).limit(limit).offset(offset);
+      totalResult = (await db.select({ value: count() }).from(deals).where(eq(deals.assignedTo, req.user!.userId)))[0]?.value ?? 0;
     }
     res.json({ deals: allDeals, total: totalResult, page, limit });
   } catch (error) {
@@ -45,29 +45,28 @@ router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/stats', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const now = Math.floor(Date.now() / 1000);
-    const thirtyDaysAgo = now - 30 * 24 * 60 * 60;
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const uid = req.user!.userId;
     const isAdminUser = isAdmin(req);
 
     const totalDeals = isAdminUser
-      ? db.select({ value: count() }).from(deals).get()?.value || 0
-      : db.select({ value: count() }).from(deals).where(eq(deals.assignedTo, uid)).get()?.value || 0;
+      ? (await db.select({ value: count() }).from(deals))[0]?.value ?? 0
+      : (await db.select({ value: count() }).from(deals).where(eq(deals.assignedTo, uid)))[0]?.value ?? 0;
 
     const signedDeals = isAdminUser
-      ? db.select({ value: count() }).from(deals).where(eq(deals.status, 'signe')).get()?.value || 0
-      : db.select({ value: count() }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe'`).get()?.value || 0;
+      ? (await db.select({ value: count() }).from(deals).where(eq(deals.status, 'signe')))[0]?.value ?? 0
+      : (await db.select({ value: count() }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe'`))[0]?.value ?? 0;
 
     const totalRevenue = isAdminUser
-      ? db.select({ value: sql`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(eq(deals.status, 'signe')).get()?.value || 0
-      : db.select({ value: sql`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe'`).get()?.value || 0;
+      ? (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(eq(deals.status, 'signe')))[0]?.value ?? 0
+      : (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe'`))[0]?.value ?? 0;
 
     const monthRevenue = isAdminUser
-      ? db.select({ value: sql`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.status} = 'signe' AND ${deals.signedAt} >= ${thirtyDaysAgo}`).get()?.value || 0
-      : db.select({ value: sql`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe' AND ${deals.signedAt} >= ${thirtyDaysAgo}`).get()?.value || 0;
+      ? (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.status} = 'signe' AND ${deals.signedAt} >= ${thirtyDaysAgo}`))[0]?.value ?? 0
+      : (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe' AND ${deals.signedAt} >= ${thirtyDaysAgo}`))[0]?.value ?? 0;
 
     res.json({
       total: totalDeals,
@@ -81,7 +80,7 @@ router.get('/stats', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/', authMiddleware, validate(dealSchema), (req: AuthRequest, res: Response) => {
+router.post('/', authMiddleware, validate(dealSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { contactId, amount, siteType, status } = req.body;
 
@@ -90,25 +89,23 @@ router.post('/', authMiddleware, validate(dealSchema), (req: AuthRequest, res: R
       return;
     }
 
-    const result = db.insert(deals).values({
+    const [deal] = await db.insert(deals).values({
       contactId: Number(contactId),
-      amount: amount || null,
+      amount: amount ?? null,
       siteType: siteType || 'vitrine_simple',
       status: status || 'en_cours',
       assignedTo: req.user!.userId,
-    }).run();
-
-    const deal = db.select().from(deals).where(eq(deals.id, Number(result.lastInsertRowid))).get();
+    }).returning();
     res.json(deal);
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.put('/:id', authMiddleware, validate(dealUpdateSchema), (req: AuthRequest, res: Response) => {
+router.put('/:id', authMiddleware, validate(dealUpdateSchema), async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const existing = db.select().from(deals).where(eq(deals.id, id)).get();
+    const existing = (await db.select().from(deals).where(eq(deals.id, id)))[0];
     if (!existing) {
       res.status(404).json({ error: 'Deal non trouvé' });
       return;
@@ -124,21 +121,24 @@ router.put('/:id', authMiddleware, validate(dealUpdateSchema), (req: AuthRequest
       if (f in req.body) updates[f] = req.body[f];
     }
 
-    if (updates.status === 'signe') {
+    if (updates.status === 'signe' && existing.status !== 'signe') {
       updates.signedAt = new Date();
     }
 
-    db.update(deals).set(updates).where(eq(deals.id, id)).run();
-    const deal = db.select().from(deals).where(eq(deals.id, id)).get();
+    const [deal] = await db.update(deals).set(updates).where(eq(deals.id, id)).returning();
     res.json(deal);
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
+router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
-    db.delete(deals).where(eq(deals.id, Number(req.params.id))).run();
+    const deleted = await db.delete(deals).where(eq(deals.id, Number(req.params.id))).returning({ id: deals.id });
+    if (deleted.length === 0) {
+      res.status(404).json({ error: 'Deal non trouvé' });
+      return;
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });

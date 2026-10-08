@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -17,7 +17,13 @@ router.post('/register', authMiddleware, requireRole('admin'), async (req: AuthR
       return;
     }
 
-    const existing = db.select().from(users).where(eq(users.email, email)).get();
+    if (typeof password !== 'string' || password.length < 8) {
+      res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères' });
+      return;
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existing = (await db.select().from(users).where(eq(users.email, normalizedEmail)))[0];
     if (existing) {
       res.status(400).json({ error: 'Cet email est déjà utilisé' });
       return;
@@ -27,15 +33,12 @@ router.post('/register', authMiddleware, requireRole('admin'), async (req: AuthR
     const userRole = validRoles.includes(role) ? role : 'demarcheur';
 
     const hashedPassword = await hashPassword(password);
-    const result = db.insert(users).values({
-      name,
-      email,
+    const [user] = await db.insert(users).values({
+      name: String(name).trim(),
+      email: normalizedEmail,
       password: hashedPassword,
       role: userRole,
-    }).run();
-
-    const user = db.select({ id: users.id, name: users.name, email: users.email, role: users.role })
-      .from(users).where(eq(users.id, Number(result.lastInsertRowid))).get();
+    }).returning({ id: users.id, name: users.name, email: users.email, role: users.role });
 
     res.json(user);
   } catch (error) {
@@ -53,7 +56,7 @@ router.post('/login', async (req, res) => {
       return;
     }
 
-    const user = db.select().from(users).where(eq(users.email, email)).get();
+    const user = (await db.select().from(users).where(eq(users.email, String(email).trim().toLowerCase())))[0];
     if (!user) {
       res.status(401).json({ error: 'Email ou mot de passe incorrect' });
       return;
@@ -81,9 +84,9 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const user = db.select().from(users).where(eq(users.id, req.user!.userId)).get();
+    const user = (await db.select().from(users).where(eq(users.id, req.user!.userId)))[0];
     if (!user) {
       res.status(404).json({ error: 'Utilisateur non trouvé' });
       return;
@@ -94,37 +97,47 @@ router.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/users', authMiddleware, requireRole('admin'), (_req, res) => {
+router.get('/users', authMiddleware, requireRole('admin'), async (_req, res) => {
   try {
-    const allUsers = db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users).all();
+    const allUsers = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users);
     res.json(allUsers);
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.delete('/users/:id', authMiddleware, requireRole('admin'), (req: AuthRequest, res: Response) => {
+router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (id === req.user!.userId) {
       res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte' });
       return;
     }
-    db.delete(users).where(eq(users.id, id)).run();
+    const deleted = await db.delete(users).where(eq(users.id, id)).returning({ id: users.id });
+    if (deleted.length === 0) {
+      res.status(404).json({ error: 'Utilisateur non trouvé' });
+      return;
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.post('/refresh', authMiddleware, (req: AuthRequest, res: Response) => {
+router.post('/refresh', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
+    // Re-check the user still exists (a deleted user must not be able to refresh).
+    const user = (await db.select({ id: users.id, email: users.email, role: users.role }).from(users).where(eq(users.id, req.user!.userId)))[0];
+    if (!user) {
+      res.status(401).json({ error: 'Utilisateur non trouvé' });
+      return;
+    }
     const newToken = generateToken({
-      userId: req.user!.userId,
-      email: req.user!.email,
-      role: req.user!.role,
+      userId: user.id,
+      email: user.email,
+      role: user.role || 'demarcheur',
     });
-    res.json({ token: newToken });
+    res.json({ token: newToken, user: { id: user.id, email: user.email, role: user.role } });
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }

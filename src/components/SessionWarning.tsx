@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE } from '../lib/api';
 
 function parseJwt(token: string): any {
   try {
@@ -47,7 +48,7 @@ export function SessionWarning() {
     try {
       const token = localStorage.getItem('crm_token');
       if (!token) return;
-      const res = await fetch('/api/auth/refresh', {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       });

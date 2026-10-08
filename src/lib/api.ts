@@ -1,4 +1,6 @@
-const API_BASE = '/api';
+// In production (split hosting) set VITE_API_URL to the Railway API URL,
+// e.g. https://crm-api.up.railway.app/api. Defaults to same-origin /api.
+export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) || '/api';
 
 function getToken(): string | null {
   return localStorage.getItem('crm_token');
@@ -50,8 +52,8 @@ async function refreshTokenIfNeeded(): Promise<void> {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
   await refreshTokenIfNeeded();
+  const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((options.headers as Record<string, string>) || {}),
@@ -73,11 +75,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error('Non autorisé');
   }
 
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || 'Erreur serveur');
+    throw new Error((data as any).error || 'Erreur serveur');
   }
-  return data;
+  return data as T;
 }
 
 export const api = {

@@ -1,23 +1,41 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { db } from '../db/index.js';
 import { contacts } from '../db/schema.js';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const router = Router();
-const upload = multer({ dest: '/tmp/uploads/' });
+
+const uploadDir = process.env.UPLOAD_DIR || path.join(os.tmpdir(), 'crm-uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const ok = /\.(xlsx|xls|csv)$/i.test(file.originalname) ||
+      /spreadsheet|excel|csv/.test(file.mimetype);
+    if (ok) {
+      cb(null, true);
+    } else {
+      cb(new Error('Type de fichier non supporté (xlsx, xls, csv uniquement)') as any, false);
+    }
+  },
+});
 
 function safeString(val: any): string {
   if (val === undefined || val === null) return '';
   return String(val).trim();
 }
 
-router.post('/excel', authMiddleware, requireRole('admin'), upload.single('file'), (req: AuthRequest, res: Response) => {
-  const filePath = req.file?.path;
+router.post('/excel', authMiddleware, requireRole('admin'), upload.single('file'), async (req: AuthRequest, res: Response) => {
+  const filePath = (req as any).file?.path;
   try {
-    if (!req.file) {
+    if (!(req as any).file) {
       res.status(400).json({ error: 'Aucun fichier fourni' });
       return;
     }
@@ -32,14 +50,28 @@ router.post('/excel', authMiddleware, requireRole('admin'), upload.single('file'
       return;
     }
 
+    if (data.length > 20000) {
+      res.status(400).json({ error: 'Fichier trop volumineux (max 20 000 lignes)' });
+      return;
+    }
+
     const { mapping } = req.body;
-    const fieldMapping = mapping ? JSON.parse(mapping) : {};
+    let fieldMapping: Record<string, string> = {};
+    if (mapping) {
+      try {
+        fieldMapping = JSON.parse(mapping);
+      } catch {
+        res.status(400).json({ error: 'Mapping invalide' });
+        return;
+      }
+    }
 
     let imported = 0;
     let skipped = 0;
+    const assignee = req.user!.userId;
 
-    const insertMany = db.transaction((rows: any[]) => {
-      for (const row of rows) {
+    await db.transaction(async (tx) => {
+      for (const row of data as any[]) {
         try {
           const businessName = safeString(row[fieldMapping.businessName || 'business_name'] || row[fieldMapping.businessName || 'Nom du commerce'] || row['business_name'] || row['Nom du commerce']);
 
@@ -48,7 +80,7 @@ router.post('/excel', authMiddleware, requireRole('admin'), upload.single('file'
             continue;
           }
 
-          db.insert(contacts).values({
+          await tx.insert(contacts).values({
             businessName,
             contactName: safeString(row[fieldMapping.contactName || 'contact_name'] || row[fieldMapping.contactName || 'Nom du contact'] || row['contact_name'] || row['Nom du contact']) || null,
             phone: safeString(row[fieldMapping.phone || 'phone'] || row[fieldMapping.phone || 'Téléphone'] || row['phone'] || row['Téléphone']) || null,
@@ -62,16 +94,14 @@ router.post('/excel', authMiddleware, requireRole('admin'), upload.single('file'
             siteStatus: safeString(row[fieldMapping.siteStatus || 'site_status'] || row['site_status']) || 'pas_de_site',
             source: 'import_excel',
             stage: 'identifie',
-            assignedTo: req.user!.userId,
-          }).run();
+            assignedTo: assignee,
+          });
           imported++;
         } catch (e) {
           skipped++;
         }
       }
     });
-
-    insertMany(data);
 
     res.json({ imported, skipped, total: data.length });
   } catch (error) {

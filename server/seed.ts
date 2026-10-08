@@ -18,7 +18,7 @@ async function seed() {
       await db.insert(users).values(user);
       console.log(`  ✅ Created user: ${user.name} (${user.email})`);
     } catch (err: any) {
-      if (err.message?.includes('UNIQUE')) {
+      if (err?.code === '23505' || err?.message?.includes('duplicate key') || err?.message?.includes('UNIQUE')) {
         console.log(`  ⏭️  User ${user.email} already exists`);
       } else {
         console.error(`  ❌ Error creating ${user.email}:`, err.message);
@@ -31,7 +31,10 @@ async function seed() {
   console.log('  alice@crm.com / alice123 (Démarcheur)');
   console.log('  bob@crm.com / bob123 (Démarcheur)');
   console.log('  charlie@crm.com / charlie123 (Démarcheur)');
+  console.log('\n⚠️  Change these passwords immediately in production!');
   console.log('\n✨ Done!');
 }
 
-seed().catch(console.error);
+seed()
+  .catch(console.error)
+  .finally(() => process.exit(0));

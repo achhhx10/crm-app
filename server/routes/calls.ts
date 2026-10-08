@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { calls, contacts } from '../db/schema.js';
@@ -21,10 +21,12 @@ function isAdmin(req: AuthRequest): boolean {
   return req.user?.role === 'admin';
 }
 
-router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { contactId, page = '1', limit = '50' } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
+    const { contactId } = req.query;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
 
     let query = db.select().from(calls);
     const conditions = [];
@@ -41,50 +43,47 @@ router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
       query = query.where(and(...conditions)) as typeof query;
     }
 
-    const allCalls = query.orderBy(desc(calls.date)).limit(Number(limit)).offset(offset).all();
+    const allCalls = await query.orderBy(desc(calls.date)).limit(limit).offset(offset);
     res.json(allCalls);
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.get('/contact/:contactId', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/contact/:contactId', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const conditions = [eq(calls.contactId, Number(req.params.contactId))];
     if (!isAdmin(req)) {
       conditions.push(eq(calls.userId, req.user!.userId));
     }
-    const contactCalls = db.select().from(calls)
+    const contactCalls = await db.select().from(calls)
       .where(and(...conditions))
-      .orderBy(desc(calls.date))
-      .all();
+      .orderBy(desc(calls.date));
     res.json(contactCalls);
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.get('/stats', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const now = Math.floor(Date.now() / 1000);
-    const thirtyDaysAgo = now - 30 * 24 * 60 * 60;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startOfDay = Math.floor(today.getTime() / 1000);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
 
     const userFilter = isAdmin(req) ? sql`1=1` : eq(calls.userId, req.user!.userId);
 
-    const totalCalls = db.select({ value: count() }).from(calls).where(userFilter).get()?.value || 0;
-    const callsToday = db.select({ value: count() }).from(calls)
-      .where(and(userFilter, sql`${calls.date} >= ${startOfDay}`)).get()?.value || 0;
-    const callsMonth = db.select({ value: count() }).from(calls)
-      .where(and(userFilter, sql`${calls.date} >= ${thirtyDaysAgo}`)).get()?.value || 0;
+    const totalCalls = (await db.select({ value: count() }).from(calls).where(userFilter))[0]?.value ?? 0;
+    const callsToday = (await db.select({ value: count() }).from(calls)
+      .where(and(userFilter, sql`${calls.date} >= ${startOfDay}`)))[0]?.value ?? 0;
+    const callsMonth = (await db.select({ value: count() }).from(calls)
+      .where(and(userFilter, sql`${calls.date} >= ${thirtyDaysAgo}`)))[0]?.value ?? 0;
 
-    const answeredCalls = db.select({ value: count() }).from(calls)
-      .where(and(userFilter, sql`${calls.result} != 'pas_decroche' AND ${calls.result} != 'messagerie'`)).get()?.value || 0;
+    const answeredCalls = (await db.select({ value: count() }).from(calls)
+      .where(and(userFilter, sql`${calls.result} != 'pas_decroche' AND ${calls.result} != 'messagerie'`)))[0]?.value ?? 0;
 
-    const rdvObtained = db.select({ value: count() }).from(calls)
-      .where(and(userFilter, eq(calls.result, 'rdv_obtenu'))).get()?.value || 0;
+    const rdvObtained = (await db.select({ value: count() }).from(calls)
+      .where(and(userFilter, eq(calls.result, 'rdv_obtenu'))))[0]?.value ?? 0;
 
     res.json({
       total: totalCalls,
@@ -99,7 +98,7 @@ router.get('/stats', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/', authMiddleware, validate(callSchema), (req: AuthRequest, res: Response) => {
+router.post('/', authMiddleware, validate(callSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { contactId, duration, result, objection, notes, nextStep } = req.body;
 
@@ -109,14 +108,14 @@ router.post('/', authMiddleware, validate(callSchema), (req: AuthRequest, res: R
     }
 
     if (!isAdmin(req)) {
-      const contact = db.select().from(contacts).where(eq(contacts.id, Number(contactId))).get();
+      const contact = (await db.select().from(contacts).where(eq(contacts.id, Number(contactId))))[0];
       if (!contact || (contact.assignedTo !== null && contact.assignedTo !== req.user!.userId)) {
         res.status(403).json({ error: 'Accès interdit' });
         return;
       }
     }
 
-    const result_insert = db.insert(calls).values({
+    const [call] = await db.insert(calls).values({
       contactId: Number(contactId),
       userId: req.user!.userId,
       duration: duration || null,
@@ -124,9 +123,7 @@ router.post('/', authMiddleware, validate(callSchema), (req: AuthRequest, res: R
       objection: objection || null,
       notes: notes || null,
       nextStep: nextStep || null,
-    }).run();
-
-    const call = db.select().from(calls).where(eq(calls.id, Number(result_insert.lastInsertRowid))).get();
+    }).returning();
     res.json(call);
   } catch (error) {
     console.error('Create call error:', error);

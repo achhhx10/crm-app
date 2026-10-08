@@ -1,8 +1,8 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { referrals, contacts } from '../db/schema.js';
-import { eq, desc, count, sql, and } from 'drizzle-orm';
+import { eq, desc, count, sql, and, inArray } from 'drizzle-orm';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -21,28 +21,34 @@ function isAdmin(req: AuthRequest): boolean {
 
 const REFERRAL_UPDATE_FIELDS = ['status', 'referredName', 'referredPhone', 'referredEmail', 'referredContactId'];
 
-router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
+async function userContactIds(userId: number): Promise<number[]> {
+  const rows = await db.select({ id: contacts.id }).from(contacts)
+    .where(eq(contacts.assignedTo, userId));
+  return rows.map((r) => r.id);
+}
+
+router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 20));
     const offset = (page - 1) * limit;
 
-    let allReferrals, totalResult;
+    let allReferrals: (typeof referrals.$inferSelect)[];
+    let totalResult: number;
     if (isAdmin(req)) {
-      allReferrals = db.select().from(referrals).orderBy(desc(referrals.createdAt)).limit(limit).offset(offset).all();
-      totalResult = db.select({ value: count() }).from(referrals).get()?.value || 0;
+      allReferrals = await db.select().from(referrals).orderBy(desc(referrals.createdAt)).limit(limit).offset(offset);
+      totalResult = (await db.select({ value: count() }).from(referrals))[0]?.value ?? 0;
     } else {
-      const userContactIds = db.select({ id: contacts.id }).from(contacts)
-        .where(eq(contacts.assignedTo, req.user!.userId)).all().map((r: any) => r.id);
-      if (userContactIds.length === 0) {
+      const ids = await userContactIds(req.user!.userId);
+      if (ids.length === 0) {
         allReferrals = [];
         totalResult = 0;
       } else {
-        const contactFilter = sql`${referrals.sourceContactId} IN (${sql.join(userContactIds.map((id: number) => sql`${id}`), sql`, `)})`;
-        allReferrals = db.select().from(referrals)
+        const contactFilter = inArray(referrals.sourceContactId, ids);
+        allReferrals = await db.select().from(referrals)
           .where(contactFilter)
-          .orderBy(desc(referrals.createdAt)).limit(limit).offset(offset).all();
-        totalResult = db.select({ value: count() }).from(referrals).where(contactFilter).get()?.value || 0;
+          .orderBy(desc(referrals.createdAt)).limit(limit).offset(offset);
+        totalResult = (await db.select({ value: count() }).from(referrals).where(contactFilter))[0]?.value ?? 0;
       }
     }
     res.json({ referrals: allReferrals, total: totalResult, page, limit });
@@ -51,19 +57,18 @@ router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/contact/:contactId', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/contact/:contactId', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) {
-      const contact = db.select().from(contacts).where(eq(contacts.id, Number(req.params.contactId))).get();
+      const contact = (await db.select().from(contacts).where(eq(contacts.id, Number(req.params.contactId))))[0];
       if (!contact || (contact.assignedTo !== null && contact.assignedTo !== req.user!.userId)) {
         res.status(403).json({ error: 'Accès interdit' });
         return;
       }
     }
-    const contactReferrals = db.select().from(referrals)
+    const contactReferrals = await db.select().from(referrals)
       .where(eq(referrals.sourceContactId, Number(req.params.contactId)))
-      .orderBy(desc(referrals.createdAt))
-      .all();
+      .orderBy(desc(referrals.createdAt));
 
     const total = contactReferrals.length;
     const signed = contactReferrals.filter(r => r.status === 'signe').length;
@@ -74,25 +79,24 @@ router.get('/contact/:contactId', authMiddleware, (req: AuthRequest, res: Respon
   }
 });
 
-router.get('/stats', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     let totalReferrals, signedReferrals;
 
     if (isAdmin(req)) {
-      totalReferrals = db.select({ value: count() }).from(referrals).get()?.value || 0;
-      signedReferrals = db.select({ value: count() }).from(referrals)
-        .where(eq(referrals.status, 'signe')).get()?.value || 0;
+      totalReferrals = (await db.select({ value: count() }).from(referrals))[0]?.value ?? 0;
+      signedReferrals = (await db.select({ value: count() }).from(referrals)
+        .where(eq(referrals.status, 'signe')))[0]?.value ?? 0;
     } else {
-      const userContactIds = db.select({ id: contacts.id }).from(contacts)
-        .where(eq(contacts.assignedTo, req.user!.userId)).all().map((r: any) => r.id);
-      if (userContactIds.length === 0) {
+      const ids = await userContactIds(req.user!.userId);
+      if (ids.length === 0) {
         totalReferrals = 0;
         signedReferrals = 0;
       } else {
-        const contactFilter = sql`${referrals.sourceContactId} IN (${sql.join(userContactIds.map((id: number) => sql`${id}`), sql`, `)})`;
-        totalReferrals = db.select({ value: count() }).from(referrals).where(contactFilter).get()?.value || 0;
-        signedReferrals = db.select({ value: count() }).from(referrals)
-          .where(and(contactFilter, eq(referrals.status, 'signe'))).get()?.value || 0;
+        const contactFilter = inArray(referrals.sourceContactId, ids);
+        totalReferrals = (await db.select({ value: count() }).from(referrals).where(contactFilter))[0]?.value ?? 0;
+        signedReferrals = (await db.select({ value: count() }).from(referrals)
+          .where(and(contactFilter, eq(referrals.status, 'signe'))))[0]?.value ?? 0;
       }
     }
 
@@ -106,7 +110,7 @@ router.get('/stats', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/', authMiddleware, validate(referralSchema), (req: AuthRequest, res: Response) => {
+router.post('/', authMiddleware, validate(referralSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { sourceContactId, referredName, referredPhone, referredEmail } = req.body;
 
@@ -116,38 +120,38 @@ router.post('/', authMiddleware, validate(referralSchema), (req: AuthRequest, re
     }
 
     if (!isAdmin(req)) {
-      const contact = db.select().from(contacts).where(eq(contacts.id, Number(sourceContactId))).get();
+      const contact = (await db.select().from(contacts).where(eq(contacts.id, Number(sourceContactId))))[0];
       if (!contact || (contact.assignedTo !== null && contact.assignedTo !== req.user!.userId)) {
         res.status(403).json({ error: 'Accès interdit' });
         return;
       }
     }
 
-    const result = db.insert(referrals).values({
+    const [referral] = await db.insert(referrals).values({
       sourceContactId: Number(sourceContactId),
       referredName,
       referredPhone: referredPhone || null,
       referredEmail: referredEmail || null,
-    }).run();
-
-    const referral = db.select().from(referrals).where(eq(referrals.id, Number(result.lastInsertRowid))).get();
+    }).returning();
     res.json(referral);
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.put('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
+router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const existing = db.select().from(referrals).where(eq(referrals.id, id)).get();
+    const existing = (await db.select().from(referrals).where(eq(referrals.id, id)))[0];
     if (!existing) {
       res.status(404).json({ error: 'Recommandation non trouvée' });
       return;
     }
 
     if (!isAdmin(req)) {
-      const contact = db.select().from(contacts).where(eq(contacts.id, existing.sourceContactId)).get();
+      const contact = existing.sourceContactId == null
+        ? undefined
+        : (await db.select().from(contacts).where(eq(contacts.id, existing.sourceContactId)))[0];
       if (!contact || (contact.assignedTo !== null && contact.assignedTo !== req.user!.userId)) {
         res.status(403).json({ error: 'Accès interdit' });
         return;
@@ -158,9 +162,11 @@ router.put('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
     for (const f of REFERRAL_UPDATE_FIELDS) {
       if (f in req.body) updates[f] = req.body[f];
     }
+    if (updates.referredContactId !== undefined && updates.referredContactId !== null) {
+      updates.referredContactId = Number(updates.referredContactId);
+    }
 
-    db.update(referrals).set(updates).where(eq(referrals.id, id)).run();
-    const referral = db.select().from(referrals).where(eq(referrals.id, id)).get();
+    const [referral] = await db.update(referrals).set(updates).where(eq(referrals.id, id)).returning();
     res.json(referral);
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
