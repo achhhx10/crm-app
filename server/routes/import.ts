@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { z } from 'zod';
 import { db } from '../db/index.js';
 import { contacts } from '../db/schema.js';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
@@ -111,6 +112,85 @@ router.post('/excel', authMiddleware, requireRole('admin'), upload.single('file'
     if (filePath) {
       fs.unlink(filePath, () => {});
     }
+  }
+});
+
+// Batch JSON import (admin only) - for scripted imports of pre-cleaned data.
+// Accepts up to 500 contacts per request; each request counts once for rate limiting.
+const batchContactSchema = z.object({
+  businessName: z.string().min(1).max(200),
+  contactName: z.string().max(200).optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  email: z.string().max(200).optional().nullable(),
+  activity: z.string().max(200).optional().nullable(),
+  city: z.string().max(200).optional().nullable(),
+  googleRating: z.number().min(0).max(5).optional().nullable(),
+  googleReviews: z.number().int().min(0).optional().nullable(),
+  hasSite: z.string().max(50).optional().nullable(),
+  siteUrl: z.string().max(500).optional().nullable(),
+  siteStatus: z.string().max(50).optional().nullable(),
+  source: z.string().max(100).optional().nullable(),
+  stage: z.string().max(50).optional().nullable(),
+  placeId: z.string().max(200).optional().nullable(),
+  latitude: z.number().optional().nullable(),
+  longitude: z.number().optional().nullable(),
+  detailUrl: z.string().max(500).optional().nullable(),
+  notes: z.string().max(5000).optional().nullable(),
+});
+
+router.post('/batch', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { contacts: items, source } = req.body;
+    if (!Array.isArray(items) || items.length === 0 || items.length > 500) {
+      res.status(400).json({ error: 'contacts doit être un tableau de 1 à 500 éléments' });
+      return;
+    }
+
+    const assignee = req.user!.userId;
+    let imported = 0;
+    let skipped = 0;
+
+    await db.transaction(async (tx) => {
+      for (const raw of items) {
+        const parsed = batchContactSchema.safeParse(raw);
+        if (!parsed.success || !parsed.data.businessName.trim()) {
+          skipped++;
+          continue;
+        }
+        const c = parsed.data;
+        try {
+          await tx.insert(contacts).values({
+            businessName: c.businessName.trim(),
+            contactName: c.contactName?.trim() || null,
+            phone: c.phone?.trim() || null,
+            email: c.email?.trim() || null,
+            activity: c.activity?.trim() || null,
+            city: c.city?.trim() || null,
+            googleRating: c.googleRating ?? null,
+            googleReviews: c.googleReviews ?? null,
+            hasSite: c.hasSite || (c.siteUrl ? 'site_fonctionnel' : 'non'),
+            siteUrl: c.siteUrl?.trim() || null,
+            siteStatus: c.siteStatus || (c.siteUrl ? 'site_fonctionnel' : 'pas_de_site'),
+            source: c.source || source || 'import_batch',
+            stage: c.stage || 'identifie',
+            placeId: c.placeId?.trim() || null,
+            latitude: c.latitude ?? null,
+            longitude: c.longitude ?? null,
+            detailUrl: c.detailUrl?.trim() || null,
+            notes: c.notes?.trim() || null,
+            assignedTo: assignee,
+          });
+          imported++;
+        } catch {
+          skipped++;
+        }
+      }
+    });
+
+    res.json({ imported, skipped, total: items.length });
+  } catch (error) {
+    console.error('Batch import error:', error);
+    res.status(500).json({ error: 'Erreur lors de l\'import' });
   }
 });
 
