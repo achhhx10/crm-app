@@ -5,6 +5,10 @@
  *   node scripts/detect-language.mjs heuristic [--limit N] [--dry-run]
  *   node scripts/detect-language.mjs crawl     [--limit N] [--concurrency N] [--delay MS] [--dry-run]
  *   node scripts/detect-language.mjs stats
+ *   node scripts/detect-language.mjs apply results.json
+ *
+ * 'crawl --out file.json' keeps every hit in a local file so the crawl itself needs
+ * no database connection; 'apply' replays the file in one short transaction.
  *
  * Requires DATABASE_URL. 'crawl' performs outbound HTTP to third-party sites:
  * it honours robots.txt, serialises requests per host and never runs the
@@ -27,6 +31,8 @@ const LIMIT = Number(flag('limit', 0)) || 0;
 const CONCURRENCY = Math.min(8, Math.max(1, Number(flag('concurrency', 3))));
 const DELAY_MS = Math.max(0, Number(flag('delay', 1200)));
 const DRY = has('dry-run');
+const OUT = flag('out', null);
+const CANDIDATES = flag('candidates', null);
 const TIMEOUT_MS = 10000;
 const MAX_BYTES = 400_000;
 
@@ -69,10 +75,12 @@ async function runHeuristic() {
     await db.query('begin');
     try {
       // Batched single statement: 39k rows would otherwise need 39k round trips.
+      // Casts are mandatory: in a VALUES row constructor Postgres infers types from
+      // the placeholders, and without them id is inferred as text (integer = text).
       const CHUNK = 1000;
       for (let i = 0; i < updates.length; i += CHUNK) {
         const part = updates.slice(i, i + CHUNK);
-        const values = part.map((u, n) => `($${n * 3 + 1}, $${n * 3 + 2}, $${n * 3 + 3})`).join(',');
+        const values = part.map((u, n) => `($${n * 3 + 1}::int, $${n * 3 + 2}::text, $${n * 3 + 3}::text)`).join(',');
         const params = part.flatMap((u) => [u.id, u.language, u.source]);
         await db.query(`update contacts as c set language = v.l, language_source = v.s
                         from (values ${values}) as v(id, l, s) where c.id = v.id`, params);
@@ -92,11 +100,24 @@ async function runHeuristic() {
 
 const robotsCache = new Map();
 
-async function robotsAllows(url) {
-  const origin = url.origin;
-  if (robotsCache.has(origin)) return robotsCache.get(origin);
+/**
+ * Longest matching path rule wins; an empty Disallow means "allow everything".
+ * A blanket `Disallow: /` is the only rule that blocks every path.
+ */
+function pathAllowed(pathname, rules) {
+  let decision = true;
+  let bestLen = -1;
+  for (const r of rules) {
+    if (r.type === 'disallow' && r.value === '') continue; // "Disallow:" with nothing = allow all
+    if (pathname.startsWith(r.value)) {
+      if (r.value.length > bestLen) { bestLen = r.value.length; decision = r.type === 'allow'; }
+    }
+  }
+  return decision;
+}
 
-  let allowed = true;
+async function getRobots(origin) {
+  const rules = [];
   let delay = DELAY_MS;
   try {
     const res = await fetch(`${origin}/robots.txt`, {
@@ -105,36 +126,43 @@ async function robotsAllows(url) {
     });
     if (res.ok) {
       const text = await res.text();
+      // Group consecutive User-agent lines, then read the rules that follow.
       let applies = false;
       for (const raw of text.split('\n')) {
         const line = raw.split('#')[0].trim();
-        if (!line) continue;
-        const [rawKey, ...rest] = line.split(':');
-        const key = rawKey.trim().toLowerCase();
-        const value = rest.join(':').trim();
-        if (key === 'user-agent') applies = value === '*';
-        else if (!applies) continue;
-        else if (key === 'disallow' && value) allowed = false;
-        else if (key === 'crawl-delay') delay = Math.max(delay, Number(value) * 1000 || 0);
+        if (!line) { continue; }
+        const idx = line.indexOf(':');
+        if (idx === -1) continue;
+        const key = line.slice(0, idx).trim().toLowerCase();
+        const value = line.slice(idx + 1).trim();
+        if (key === 'user-agent') { applies = value === '*'; continue; }
+        if (!applies) continue;
+        if (key === 'disallow' || key === 'allow') rules.push({ type: key, value });
+        else if (key === 'crawl-delay') delay = Math.max(delay, (Number(value) || 0) * 1000);
       }
     }
   } catch { /* unreachable robots.txt -> proceed, as crawlers conventionally do */ }
+  return { rules, delay };
+}
 
-  robotsCache.set(origin, { allowed, delay });
-  return robotsCache.get(origin);
+async function robotsAllows(url) {
+  const origin = url.origin;
+  if (!robotsCache.has(origin)) robotsCache.set(origin, await getRobots(origin));
+  const { rules, delay } = robotsCache.get(origin);
+  return { allowed: pathAllowed(url.pathname, rules), delay };
 }
 
 const lastHit = new Map();
 
-async function politeWait(url) {
+async function politeWait(url, delayMs) {
   const prev = lastHit.get(url.hostname) || 0;
-  const wait = prev + DELAY_MS - Date.now();
+  const wait = prev + (delayMs || DELAY_MS) - Date.now();
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   lastHit.set(url.hostname, Date.now());
 }
 
-async function fetchPage(url) {
-  await politeWait(url);
+async function fetchPage(url, delayMs) {
+  await politeWait(url, delayMs);
   const res = await fetch(url, {
     redirect: 'follow',
     signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -164,14 +192,22 @@ async function fetchPage(url) {
 
 async function runCrawl() {
   // Only rows that are undetermined, or known only by city (the weakest signal).
-  const params = [ 'language is null OR language_source = \'city\'' ];
-  let sql = `select id, business_name, city, site_url from contacts
-              where site_url is not null and site_url <> '' and (${params[0]})
-              order by id`;
-  const qp = [];
-  if (LIMIT) { qp.push(LIMIT); sql += ` limit $${qp.length}`; }
-
-  const { rows } = await db.query(sql, qp);
+  // Candidates can be pre-extracted to a file so a multi-hour crawl never has to
+  // hold a tunnel open to the production database.
+  let rows;
+  if (CANDIDATES) {
+    const { readFileSync } = await import('node:fs');
+    rows = readFileSync(CANDIDATES, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    if (LIMIT) rows = rows.slice(0, LIMIT);
+  } else {
+    let sql = `select id, business_name, city, site_url from contacts
+                where site_url is not null and site_url <> ''
+                  and (language is null or language_source = 'city')
+                order by id`;
+    const qp = [];
+    if (LIMIT) { qp.push(LIMIT); sql += ` limit $${qp.length}`; }
+    ({ rows } = await db.query(sql, qp));
+  }
   console.log(`candidates avec site web : ${rows.length}`);
   console.log(`limite: ${LIMIT || 'aucune'} | concurrence: ${CONCURRENCY} | delai: ${DELAY_MS}ms`);
   if (DRY) console.log('DRY RUN — aucune ecriture');
@@ -179,6 +215,7 @@ async function runCrawl() {
   const stats = { detected: 0, robots: 0, error: 0, inconclusive: 0, ok: 0 };
   const errors = {};
   const updates = [];
+  const crawlLines = [];
   let cursor = 0;
 
   async function worker() {
@@ -189,10 +226,11 @@ async function runCrawl() {
 
       const robots = await robotsAllows(url);
       if (!robots.allowed) { stats.robots++; continue; }
+      const hostDelay = robots.delay;
 
       let page;
       try {
-        page = await fetchPage(url);
+        page = await fetchPage(url, hostDelay);
       } catch (e) {
         stats.error++;
         const k = e.name === 'TimeoutError' ? 'timeout' : 'network';
@@ -206,7 +244,11 @@ async function runCrawl() {
 
       stats.detected++;
       updates.push({ id: row.id, language: det.language, source: det.source });
-      if (!DRY) {
+      if (OUT && !DRY) {
+        const { writeFileSync, appendFileSync } = await import('node:fs');
+        if (!crawlLines.length) writeFileSync(OUT, '');
+        appendFileSync(OUT, JSON.stringify(updates.at(-1)) + '\n');
+      } else if (!DRY && !OUT) {
         await db.query(`update contacts set language = $1, language_source = $2 where id = $3`,
                        [det.language, det.source, row.id]);
       }
@@ -231,6 +273,35 @@ async function runCrawl() {
   if (!DRY) console.log(`  mis a jour   : ${updates.length}`);
 }
 
+/* --------------------------------- apply --------------------------------- */
+
+/** Replay a crawl result file in one transaction. Needs the DB for a few seconds. */
+async function runApply(file) {
+  const { readFileSync } = await import('node:fs');
+  const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
+  const rows = lines.map((l) => JSON.parse(l));
+  console.log(`${rows.length} resultats a appliquer`);
+
+  if (DRY) { console.log('DRY RUN'); return; }
+
+  await db.query('begin');
+  try {
+    const CHUNK = 1000;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const part = rows.slice(i, i + CHUNK);
+      const values = part.map((u, n) => `($${n * 3 + 1}::int, $${n * 3 + 2}::text, $${n * 3 + 3}::text)`).join(',');
+      const params = part.flatMap((u) => [u.id, u.language, u.source]);
+      await db.query(`update contacts as c set language = v.l, language_source = v.s
+                      from (values ${values}) as v(id, l, s) where c.id = v.id`, params);
+    }
+    await db.query('commit');
+    console.log(`commit: ${rows.length} lignes mises a jour`);
+  } catch (e) {
+    await db.query('rollback');
+    throw e;
+  }
+}
+
 /* --------------------------------- stats --------------------------------- */
 
 async function runStats() {
@@ -248,6 +319,7 @@ try {
   if (mode === 'heuristic') await runHeuristic();
   else if (mode === 'crawl') await runCrawl();
   else if (mode === 'stats') await runStats();
+  else if (mode === 'apply') await runApply(argv[1]);
   else { console.error('usage: detect-language.mjs heuristic|crawl|stats [--limit N] [--dry-run]'); process.exit(2); }
 } catch (e) {
   console.error('FAILED:', e.message);
