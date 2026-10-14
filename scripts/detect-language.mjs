@@ -36,18 +36,26 @@ const CANDIDATES = flag('candidates', null);
 const TIMEOUT_MS = 10000;
 const MAX_BYTES = 400_000;
 
-if (!process.env.DATABASE_URL) {
+// Only modes that actually read or write the database need credentials.
+const needsDb = !(mode === 'crawl' && CANDIDATES);
+if (needsDb && !process.env.DATABASE_URL) {
   console.error('DATABASE_URL is required (railway run ... or export it).');
   process.exit(1);
 }
 
 const db = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-await db.connect();
+let connected = false;
+// Lazy: 'crawl --candidates' never touches the database, so a multi-hour run does
+// not need a tunnel to production open.
+async function getDb() {
+  if (!connected) { await db.connect(); connected = true; }
+  return db;
+}
 
 /* ------------------------------- heuristics ------------------------------- */
 
 async function runHeuristic() {
-  const { rows } = await db.query(
+  const { rows } = await (await getDb()).query(
     LIMIT
       ? `select id, business_name, city, language, language_source from contacts order by id limit $1`
       : `select id, business_name, city, language, language_source from contacts`
@@ -72,7 +80,7 @@ async function runHeuristic() {
   console.log('  par source :', bySource);
 
   if (!DRY) {
-    await db.query('begin');
+    await (await getDb()).query('begin');
     try {
       // Batched single statement: 39k rows would otherwise need 39k round trips.
       // Casts are mandatory: in a VALUES row constructor Postgres infers types from
@@ -82,13 +90,13 @@ async function runHeuristic() {
         const part = updates.slice(i, i + CHUNK);
         const values = part.map((u, n) => `($${n * 3 + 1}::int, $${n * 3 + 2}::text, $${n * 3 + 3}::text)`).join(',');
         const params = part.flatMap((u) => [u.id, u.language, u.source]);
-        await db.query(`update contacts as c set language = v.l, language_source = v.s
+        await (await getDb()).query(`update contacts as c set language = v.l, language_source = v.s
                         from (values ${values}) as v(id, l, s) where c.id = v.id`, params);
       }
-      await db.query('commit');
+      await (await getDb()).query('commit');
       console.log(`committed ${updates.length} updates`);
     } catch (e) {
-      await db.query('rollback');
+      await (await getDb()).query('rollback');
       throw e;
     }
   } else {
@@ -206,7 +214,7 @@ async function runCrawl() {
                 order by id`;
     const qp = [];
     if (LIMIT) { qp.push(LIMIT); sql += ` limit $${qp.length}`; }
-    ({ rows } = await db.query(sql, qp));
+    ({ rows } = await (await getDb()).query(sql, qp));
   }
   console.log(`candidates avec site web : ${rows.length}`);
   console.log(`limite: ${LIMIT || 'aucune'} | concurrence: ${CONCURRENCY} | delai: ${DELAY_MS}ms`);
@@ -215,8 +223,13 @@ async function runCrawl() {
   const stats = { detected: 0, robots: 0, error: 0, inconclusive: 0, ok: 0 };
   const errors = {};
   const updates = [];
-  const crawlLines = [];
   let cursor = 0;
+  // One append handle for the whole run: re-opening the file per hit truncated it.
+  let sink = null;
+  if (OUT && !DRY) {
+    const { createWriteStream } = await import('node:fs');
+    sink = createWriteStream(OUT, { flags: 'a' });
+  }
 
   async function worker() {
     while (cursor < rows.length) {
@@ -244,12 +257,10 @@ async function runCrawl() {
 
       stats.detected++;
       updates.push({ id: row.id, language: det.language, source: det.source });
-      if (OUT && !DRY) {
-        const { writeFileSync, appendFileSync } = await import('node:fs');
-        if (!crawlLines.length) writeFileSync(OUT, '');
-        appendFileSync(OUT, JSON.stringify(updates.at(-1)) + '\n');
+      if (sink) {
+        sink.write(JSON.stringify(updates.at(-1)) + '\n');
       } else if (!DRY && !OUT) {
-        await db.query(`update contacts set language = $1, language_source = $2 where id = $3`,
+        await (await getDb()).query(`update contacts set language = $1, language_source = $2 where id = $3`,
                        [det.language, det.source, row.id]);
       }
     }
@@ -263,6 +274,7 @@ async function runCrawl() {
   }, 1500);
 
   await Promise.all(workers);
+  if (sink) await new Promise((r) => sink.end(r));
   clearInterval(timer);
   process.stdout.write(`\r  ${rows.length}/${rows.length} termine en ${((Date.now() - t0) / 1000).toFixed(0)}s          \n`);
 
@@ -284,20 +296,20 @@ async function runApply(file) {
 
   if (DRY) { console.log('DRY RUN'); return; }
 
-  await db.query('begin');
+  await (await getDb()).query('begin');
   try {
     const CHUNK = 1000;
     for (let i = 0; i < rows.length; i += CHUNK) {
       const part = rows.slice(i, i + CHUNK);
       const values = part.map((u, n) => `($${n * 3 + 1}::int, $${n * 3 + 2}::text, $${n * 3 + 3}::text)`).join(',');
       const params = part.flatMap((u) => [u.id, u.language, u.source]);
-      await db.query(`update contacts as c set language = v.l, language_source = v.s
+      await (await getDb()).query(`update contacts as c set language = v.l, language_source = v.s
                       from (values ${values}) as v(id, l, s) where c.id = v.id`, params);
     }
-    await db.query('commit');
+    await (await getDb()).query('commit');
     console.log(`commit: ${rows.length} lignes mises a jour`);
   } catch (e) {
-    await db.query('rollback');
+    await (await getDb()).query('rollback');
     throw e;
   }
 }
@@ -305,11 +317,11 @@ async function runApply(file) {
 /* --------------------------------- stats --------------------------------- */
 
 async function runStats() {
-  const { rows } = await db.query(`
+  const { rows } = await (await getDb()).query(`
     select coalesce(language,'(indetermine)') lang, coalesce(language_source,'-') src, count(*)::int n
     from contacts group by 1,2 order by n desc`);
   console.table(rows);
-  const t = await db.query(`select count(*)::int total,
+  const t = await (await getDb()).query(`select count(*)::int total,
       count(*) filter (where site_url is not null and site_url <> '')::int avec_site,
       count(*) filter (where language is null)::int indetermines from contacts`);
   console.table(t.rows);
@@ -325,5 +337,5 @@ try {
   console.error('FAILED:', e.message);
   process.exit(1);
 } finally {
-  await db.end();
+  if (connected) await db.end();
 }
