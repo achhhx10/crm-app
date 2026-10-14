@@ -141,6 +141,7 @@ export function ContactsPage() {
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [quickCallContact, setQuickCallContact] = useState<Contact | null>(null);
+  const [quickCallStartedAt, setQuickCallStartedAt] = useState<number>(Date.now());
   const [sortField, setSortField] = useState('opportunity');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -314,8 +315,11 @@ export function ContactsPage() {
   const handleQuickCall = async () => {
     if (!quickCallContact) return;
     try {
+      // duration is validated as a positive integer server-side, so never send 0.
+      const elapsed = Math.floor((Date.now() - quickCallStartedAt) / 1000);
       await api.calls.create({
         contactId: quickCallContact.id,
+        duration: elapsed > 0 ? elapsed : undefined,
         result: callForm.result,
         objection: callForm.objection || undefined,
         notes: callForm.notes || undefined,
@@ -323,7 +327,12 @@ export function ContactsPage() {
       });
       setQuickCallContact(null);
       setCallForm({ result: 'pas_decroche', objection: '', notes: '', nextStep: '' });
-    } catch (err) { console.error(err); }
+      loadContacts();
+      toast('Appel enregistré', 'success');
+    } catch (err) {
+      console.error(err);
+      toast("Erreur lors de l'enregistrement de l'appel", 'error');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -576,7 +585,7 @@ export function ContactsPage() {
                       <div className="flex justify-end gap-0.5">
                         {contact.phone && (
                           <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" aria-label="Enregistrer un appel"
-                            onClick={() => { setQuickCallContact(contact); setCallForm({ result: 'pas_decroche', objection: '', notes: '', nextStep: '' }); }}>
+                            onClick={() => { setQuickCallContact(contact); setQuickCallStartedAt(Date.now()); setCallForm({ result: 'pas_decroche', objection: '', notes: '', nextStep: '' }); }}>
                             <Phone className="h-3.5 w-3.5 text-green-600" />
                           </Button>
                         )}

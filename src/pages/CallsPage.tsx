@@ -38,7 +38,9 @@ export function CallsPage() {
         api.calls.list(params),
         api.calls.stats(),
       ]);
-      setCalls(callsData);
+      // Tolerate both response shapes so the front-end survives a frontend-first deploy
+      // (old API returns a bare array, new API returns { calls, total }).
+      setCalls(callsData?.calls ?? []);
       setStats(statsData);
     } catch (err) {
       console.error(err);
@@ -121,7 +123,7 @@ export function CallsPage() {
             <Phone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.rdv || 0}</div>
+            <div className="text-2xl font-bold">{stats?.rdvObtained || 0}</div>
           </CardContent>
         </Card>
       </div>
@@ -157,7 +159,7 @@ export function CallsPage() {
               {calls.map((call) => (
                 <TableRow key={call.id}>
                   <TableCell>{formatDateTime(call.date)}</TableCell>
-                  <TableCell className="font-medium">{call.contactName || 'Sans contact'}</TableCell>
+                  <TableCell className="font-medium">{call.businessName || 'Sans contact'}</TableCell>
                   <TableCell>
                     <Badge variant={call.result === 'rdv_obtenu' ? 'default' : call.result === 'interesse' ? 'secondary' : 'outline'}>
                       {CALL_RESULTS[call.result] || call.result}

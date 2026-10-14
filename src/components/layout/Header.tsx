@@ -8,6 +8,7 @@ const pageTitles: Record<string, string> = {
   '/': 'Tableau de bord',
   '/pipeline': 'Pipeline de vente',
   '/contacts': 'Prospects',
+  '/phoning': 'Phoning',
   '/contacts/:id': 'Fiche prospect',
   '/deals': 'Deals',
   '/calls': 'Appels',

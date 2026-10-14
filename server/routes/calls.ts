@@ -28,7 +28,6 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
     const offset = (page - 1) * limit;
 
-    let query = db.select().from(calls);
     const conditions = [];
 
     if (!isAdmin(req)) {
@@ -39,12 +38,33 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       conditions.push(eq(calls.contactId, Number(contactId)));
     }
 
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as typeof query;
-    }
+    const allCalls = await db
+      .select({
+        id: calls.id,
+        contactId: calls.contactId,
+        userId: calls.userId,
+        date: calls.date,
+        duration: calls.duration,
+        result: calls.result,
+        objection: calls.objection,
+        notes: calls.notes,
+        nextStep: calls.nextStep,
+        // Joined so the UI can label each row instead of showing "Sans contact".
+        businessName: contacts.businessName,
+      })
+      .from(calls)
+      .leftJoin(contacts, eq(calls.contactId, contacts.id))
+      .orderBy(desc(calls.date))
+      .limit(limit)
+      .offset(offset);
 
-    const allCalls = await query.orderBy(desc(calls.date)).limit(limit).offset(offset);
-    res.json(allCalls);
+    const totalQuery = db.select({ value: count() }).from(calls);
+    if (conditions.length > 0) {
+      totalQuery.where(and(...conditions));
+    }
+    const total = (await totalQuery)[0]?.value ?? 0;
+
+    res.json({ calls: allCalls, total });
   } catch (error) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -56,7 +76,21 @@ router.get('/contact/:contactId', authMiddleware, async (req: AuthRequest, res: 
     if (!isAdmin(req)) {
       conditions.push(eq(calls.userId, req.user!.userId));
     }
-    const contactCalls = await db.select().from(calls)
+    const contactCalls = await db
+      .select({
+        id: calls.id,
+        contactId: calls.contactId,
+        userId: calls.userId,
+        date: calls.date,
+        duration: calls.duration,
+        result: calls.result,
+        objection: calls.objection,
+        notes: calls.notes,
+        nextStep: calls.nextStep,
+        businessName: contacts.businessName,
+      })
+      .from(calls)
+      .leftJoin(contacts, eq(calls.contactId, contacts.id))
       .where(and(...conditions))
       .orderBy(desc(calls.date));
     res.json(contactCalls);

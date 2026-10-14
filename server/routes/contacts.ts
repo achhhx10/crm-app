@@ -53,9 +53,9 @@ function pickAllowedFields(body: any, fields: string[]) {
 
 router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, sortBy, sortDir } = req.query;
+    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, sortBy, sortDir } = req.query;
     const page = Math.max(1, Number(req.query.page) || 1);
-    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 50));
     const offset = (page - 1) * limit;
 
     let query = db.select().from(contacts);
@@ -109,6 +109,13 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     if (hasReviews === 'true') {
       conditions.push(sql`${contacts.googleReviews} IS NOT NULL`);
     }
+    // Phoning queue: hide leads already called (by anyone for admins, by the caller otherwise).
+    if (excludeCalled === 'true') {
+      const sub = isAdmin(req)
+        ? sql`SELECT 1 FROM calls WHERE calls.contact_id = ${contacts.id}`
+        : sql`SELECT 1 FROM calls WHERE calls.contact_id = ${contacts.id} AND calls.user_id = ${req.user!.userId}`;
+      conditions.push(sql`NOT EXISTS (${sub})`);
+    }
 
     if (conditions.length > 0) {
       const whereClause = and(...conditions);
@@ -132,14 +139,18 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       created_at: contacts.createdAt,
     };
 
-    const opportunityExpr = sql`CASE WHEN ${contacts.hasSite} = 'pas_de_site' THEN 2 ELSE 0 END
+    // 'non' is the legacy value for "no site" (see hasSite handling above): count it
+    // like 'pas_de_site' so legacy rows are not under-ranked, mirroring lib/utils.ts.
+    const opportunityExpr = sql`CASE WHEN ${contacts.hasSite} IN ('pas_de_site','non') THEN 2 ELSE 0 END
       + CASE WHEN ${contacts.phone} IS NOT NULL AND ${contacts.phone} != '' THEN 2 ELSE 0 END
       + CASE WHEN ${contacts.googleRating} >= 4.5 THEN 1 ELSE 0 END
       + CASE WHEN ${contacts.googleReviews} >= 20 THEN 1 ELSE 0 END`;
 
     let orderedQuery: typeof query;
     if (sortField === 'opportunity') {
-      orderedQuery = query.orderBy(desc(opportunityExpr), desc(contacts.createdAt)) as typeof query;
+      // contacts.id as final tiebreaker keeps the order stable across fetches,
+      // otherwise "lead 3 of 340" can drift between requests.
+      orderedQuery = query.orderBy(desc(opportunityExpr), desc(contacts.createdAt), desc(contacts.id)) as typeof query;
     } else {
       const sortCol = sortColumnMap[sortField] || contacts.createdAt;
       orderedQuery = query.orderBy(sortDirection(sortCol)) as typeof query;

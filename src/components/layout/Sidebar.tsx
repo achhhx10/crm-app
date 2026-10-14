@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { GitBranch, Upload, Shield, LogOut, DollarSign, LayoutDashboard, Users, Phone, Gift } from 'lucide-react';
+import { GitBranch, Upload, Shield, LogOut, DollarSign, LayoutDashboard, Users, Phone, PhoneCall, Gift } from 'lucide-react';
 import { DarkModeToggle } from '../ui/dark-mode-toggle';
 
 const mainNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Tableau de bord', end: true },
   { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
   { to: '/contacts', icon: Users, label: 'Prospects' },
+  { to: '/phoning', icon: PhoneCall, label: 'Phoning' },
   { to: '/deals', icon: DollarSign, label: 'Deals' },
   { to: '/calls', icon: Phone, label: 'Appels' },
   { to: '/referrals', icon: Gift, label: 'Recommandations' },

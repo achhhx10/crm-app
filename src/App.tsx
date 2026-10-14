@@ -8,6 +8,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const PipelinePage = React.lazy(() => import('./pages/PipelinePage').then(m => ({ default: m.PipelinePage })));
 const ContactsPage = React.lazy(() => import('./pages/ContactsPage').then(m => ({ default: m.ContactsPage })));
+const PhoningPage = React.lazy(() => import('./pages/PhoningPage').then(m => ({ default: m.PhoningPage })));
 const ContactDetailPage = React.lazy(() => import('./pages/ContactDetailPage').then(m => ({ default: m.ContactDetailPage })));
 const CallsPage = React.lazy(() => import('./pages/CallsPage').then(m => ({ default: m.CallsPage })));
 const DealsPage = React.lazy(() => import('./pages/DealsPage').then(m => ({ default: m.DealsPage })));
@@ -66,6 +67,16 @@ export default function App() {
                 <PrivateRoute>
                   <Suspense fallback={loadingFallback}>
                     <ContactsPage />
+                  </Suspense>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/phoning"
+              element={
+                <PrivateRoute>
+                  <Suspense fallback={loadingFallback}>
+                    <PhoningPage />
                   </Suspense>
                 </PrivateRoute>
               }
