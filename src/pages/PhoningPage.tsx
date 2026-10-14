@@ -10,7 +10,7 @@ import { Input } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { CALL_RESULTS, OBJECTIONS, STAGES, formatDateTime, formatDuration } from '../lib/utils';
+import { CALL_RESULTS, OBJECTIONS, STAGES, LANGUAGES, formatDateTime, formatDuration } from '../lib/utils';
 import type { Contact, Call } from '../types';
 
 const QUEUE_KEY = 'crm_phoning_queue';
@@ -22,9 +22,10 @@ interface Filters {
   reach: string;
   stage: string;
   hasSite: string;
+  language: string;
 }
 
-const DEFAULT_FILTERS: Filters = { reach: 'true', stage: '', hasSite: '' };
+const DEFAULT_FILTERS: Filters = { reach: 'true', stage: '', hasSite: '', language: '' };
 
 /** Google search with the company name prefilled; city disambiguates homonyms. */
 function buildSearchUrl(c: Contact): string {
@@ -78,6 +79,7 @@ export function PhoningPage() {
       if (f.reach) params.reach = f.reach;
       if (f.stage) params.stage = f.stage;
       if (f.hasSite) params.hasSite = f.hasSite;
+      if (f.language) params.language = f.language;
 
       const { contacts, total: t } = await api.contacts.list(params);
       setQueue(contacts || []);
@@ -167,9 +169,17 @@ export function PhoningPage() {
   const openSearch = useCallback(() => {
     if (!current) return;
     const url = buildSearchUrl(current);
-    const win = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!win) window.location.href = url;
-  }, [current]);
+    // No 'noopener' feature here: it makes window.open() return null by spec, which
+    // would silently push us into the "blocked" branch. Null out opener manually
+    // instead, so we get a real handle and can tell blocked from opened.
+    const win = window.open(url, '_blank');
+    if (win) {
+      win.opener = null;
+    } else {
+      // Popup blocked by the browser: never navigate the CRM away, just tell the user.
+      toast('Le navigateur a bloqué la fenêtre. Autorise les pop-ups pour ce site.', 'error');
+    }
+  }, [current, toast]);
 
   const saveCall = useCallback(async () => {
     if (!current || savingRef.current) return;
@@ -316,6 +326,11 @@ export function PhoningPage() {
                     {current.googleRating} ({current.googleReviews ?? 0} avis)
                   </Badge>
                 )}
+                {current?.language && LANGUAGES[current.language] && (
+                  <Badge variant={LANGUAGES[current.language].variant}>
+                    {LANGUAGES[current.language].label}
+                  </Badge>
+                )}
               </div>
 
               {/* Contact actions */}
@@ -329,9 +344,17 @@ export function PhoningPage() {
                 ) : (
                   <Badge variant="warning"><AlertCircle className="h-3 w-3 mr-1" /> Pas de téléphone</Badge>
                 )}
-                <Button variant="outline" onClick={openSearch}>
-                  <Search className="h-4 w-4 mr-2" /> Recherche Google
-                </Button>
+                {current && (
+                  <Button asChild variant="outline">
+                    <a
+                      href={buildSearchUrl(current)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Search className="h-4 w-4 mr-2" /> Recherche Google
+                    </a>
+                  </Button>
+                )}
                 {current?.siteUrl && (
                   <Button asChild variant="ghost">
                     <a href={current.siteUrl} target="_blank" rel="noopener noreferrer">
@@ -551,6 +574,16 @@ function FiltersBar({
         >
           <option value="">Tous les stages</option>
           {Object.entries(STAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </Select>
+        <Select
+          className="w-auto"
+          value={filters.language}
+          onChange={e => setFilters({ ...filters, language: e.target.value })}
+          aria-label="Langue"
+        >
+          <option value="">Toutes les langues</option>
+          {Object.entries(LANGUAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          <option value="__empty__">Indéterminée</option>
         </Select>
         <span className="text-sm text-muted-foreground ml-auto">
           {queueSummary(total, remaining)}

@@ -53,7 +53,7 @@ function pickAllowedFields(body: any, fields: string[]) {
 
 router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, sortBy, sortDir } = req.query;
+    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, language, sortBy, sortDir } = req.query;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 50));
     const offset = (page - 1) * limit;
@@ -108,6 +108,12 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     }
     if (hasReviews === 'true') {
       conditions.push(sql`${contacts.googleReviews} IS NOT NULL`);
+    }
+    // Language filter: 'de'/'fr'/'it'/'en', or '__empty__' for undetermined.
+    if (language === '__empty__') {
+      conditions.push(isNull(contacts.language));
+    } else if (language && typeof language === 'string') {
+      conditions.push(eq(contacts.language, language));
     }
     // Phoning queue: hide leads already called (by anyone for admins, by the caller otherwise).
     if (excludeCalled === 'true') {

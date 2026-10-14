@@ -9,7 +9,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/u
 import { Badge } from '../components/ui/badge';
 import { Plus, Search, Phone, Edit, Eye, EyeOff, ChevronUp, ChevronDown, Download, Trash2, ArrowUpDown, X, Globe, GlobeLock, Flame, Gem, RefreshCw, Ban, MapPinOff, Star } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
-import { STAGES, CALL_RESULTS, OBJECTIONS, formatDate, opportunityScore, opportunityMeta } from '../lib/utils';
+import { STAGES, CALL_RESULTS, OBJECTIONS, LANGUAGES, formatDate, opportunityScore, opportunityMeta } from '../lib/utils';
 import type { Contact } from '../types';
 
 const sources = ['appel', 'internet', 'bouche_a_oreille', 'linkedin', 'autre'];
@@ -130,6 +130,7 @@ export function ContactsPage() {
   const [minRating, setMinRating] = useState('');
   const [hasSiteFilter, setHasSiteFilter] = useState('all');
   const [cityFilter, setCityFilter] = useState('all');
+  const [languageFilter, setLanguageFilter] = useState('all');
   const [reachFilter, setReachFilter] = useState<'all' | 'true' | 'false'>(defaultReach);
   const [hasReviewsFilter, setHasReviewsFilter] = useState('all');
   const [minReviews, setMinReviews] = useState('');
@@ -166,7 +167,7 @@ export function ContactsPage() {
 
   useEffect(() => {
     loadContacts();
-  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, sortField, sortDir]);
+  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, sortField, sortDir]);
 
   useEffect(() => {
     api.contacts.activities().then(setActivities).catch(() => {});
@@ -189,6 +190,7 @@ export function ContactsPage() {
       if (minRating) params.minRating = minRating;
       if (hasSiteFilter !== 'all') params.hasSite = hasSiteFilter;
       if (cityFilter !== 'all') params.city = cityFilter;
+      if (languageFilter !== 'all') params.language = languageFilter;
       if (reachFilter !== 'all') params.reach = reachFilter;
       if (hasReviewsFilter !== 'all') params.hasReviews = hasReviewsFilter;
       if (minReviews) params.minReviews = minReviews;
@@ -297,6 +299,7 @@ export function ContactsPage() {
     if (minRating) params.minRating = minRating;
     if (hasSiteFilter !== 'all') params.hasSite = hasSiteFilter;
     if (cityFilter !== 'all') params.city = cityFilter;
+    if (languageFilter !== 'all') params.language = languageFilter;
     if (reachFilter !== 'all') params.reach = reachFilter;
     if (hasReviewsFilter !== 'all') params.hasReviews = hasReviewsFilter;
     if (minReviews) params.minReviews = minReviews;
@@ -440,6 +443,11 @@ export function ContactsPage() {
         <Select value={stageFilter} onChange={(e) => { setActivePreset(null); setStageFilter(e.target.value); setPage(1); }}>
           <option value="all">Tous les stages</option>
           {Object.entries(STAGES).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
+        </Select>
+        <Select value={languageFilter} onChange={(e) => { setActivePreset(null); setLanguageFilter(e.target.value); setPage(1); }}>
+          <option value="all">Toutes langues</option>
+          {Object.entries(LANGUAGES).map(([key, l]) => <option key={key} value={key}>{l.label}</option>)}
+          <option value="__empty__">Indéterminée</option>
         </Select>
         <Select value={activityFilter} onChange={(e) => { setActivePreset(null); setActivityFilter(e.target.value); setPage(1); }}>
           <option value="all">Toutes activités</option>

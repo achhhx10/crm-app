@@ -76,6 +76,14 @@ export const OBJECTIONS: Record<string, string> = {
   autre: 'Autre',
 };
 
+/** Detected business language. Heuristic: what the company publishes, not what it speaks. */
+export const LANGUAGES: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
+  de: { label: 'Allemand', variant: 'default' },
+  fr: { label: 'Français', variant: 'secondary' },
+  it: { label: 'Italien', variant: 'secondary' },
+  en: { label: 'Anglais', variant: 'outline' },
+};
+
 export function opportunityScore(c: { hasSite?: string | null; phone?: string | null; googleRating?: number | null; googleReviews?: number | null }): number {
   let score = 0;
   if (c.hasSite === 'pas_de_site' || c.hasSite === 'non') score += 2;

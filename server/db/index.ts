@@ -99,6 +99,10 @@ async function initSchema() {
   CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status);
   CREATE INDEX IF NOT EXISTS idx_deals_assigned ON deals(assigned_to);
   CREATE INDEX IF NOT EXISTS idx_referrals_source ON referrals(source_contact_id);
+
+  ALTER TABLE contacts ADD COLUMN IF NOT EXISTS language TEXT;
+  ALTER TABLE contacts ADD COLUMN IF NOT EXISTS language_source TEXT;
+  CREATE INDEX IF NOT EXISTS idx_contacts_language ON contacts(language);
   `);
 }
 

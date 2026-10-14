@@ -31,6 +31,11 @@ export const contacts = pgTable('contacts', {
   assignedTo: integer('assigned_to').references(() => users.id, { onDelete: 'set null' }),
   objection: text('objection'),
   notes: text('notes'),
+  // Language of the business, detected from legal form / vocabulary / city / website.
+  // 'de' | 'fr' | 'it' | 'en' | null when undetermined.
+  language: text('language'),
+  // How the value was obtained: 'legal_form' | 'vocabulary' | 'city' | 'website'.
+  languageSource: text('language_source'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });

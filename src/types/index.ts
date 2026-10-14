@@ -27,6 +27,9 @@ export interface Contact {
   assignedTo: number | null;
   objection: string | null;
   notes: string | null;
+  /** 'de' | 'fr' | 'it' | 'en' | null. Detected, not declared by the business. */
+  language?: string | null;
+  languageSource?: string | null;
   createdAt: number | null;
   updatedAt: number | null;
 }
