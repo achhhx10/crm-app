@@ -22,6 +22,8 @@ const contactSchema = z.object({
   stage: z.string().optional(),
   objection: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  dnc: z.union([z.boolean(), z.number().int().min(0).max(1)]).optional(),
+  dncReason: z.string().optional().nullable(),
   assignedTo: z.number().int().optional()
 }).partial();
 
@@ -83,7 +85,7 @@ function ownershipCondition(userId: number) {
 const CONTACT_UPDATE_FIELDS = [
   'businessName', 'contactName', 'phone', 'email', 'activity', 'city',
   'googleRating', 'googleReviews', 'hasSite', 'siteUrl', 'siteStatus',
-  'source', 'stage', 'objection', 'notes',
+  'source', 'stage', 'objection', 'notes', 'dnc', 'dncReason',
 ];
 
 function pickAllowedFields(body: any, fields: string[]) {
@@ -96,7 +98,7 @@ function pickAllowedFields(body: any, fields: string[]) {
 
 router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, language, sortBy, sortDir } = req.query;
+    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, language, dnc, sortBy, sortDir } = req.query;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 50));
     const offset = (page - 1) * limit;
@@ -156,6 +158,14 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     } else if (language && typeof language === 'string' && language !== 'all') {
       conditions.push(eq(contacts.language, language));
     }
+    // Opt-out. Default ('exclude') keeps flagged businesses out of every list;
+    // 'only' shows just those, so they stay reachable for auditing.
+    if (dnc === 'only') {
+      conditions.push(sql`${contacts.dnc} = 1`);
+    } else if (dnc !== 'include') {
+      conditions.push(sql`coalesce(${contacts.dnc}, 0) = 0`);
+    }
+
     // Phoning queue: hide leads already called (by anyone for admins, by the caller otherwise).
     if (excludeCalled === 'true') {
       const sub = isAdmin(req)
@@ -249,7 +259,7 @@ router.get('/cities', authMiddleware, async (_req, res) => {
 
 router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, stage, activity, minRating, hasSite, city, reach, minReviews, hasReviews } = req.query;
+    const { search, stage, activity, minRating, hasSite, city, reach, minReviews, hasReviews, dnc, language, ids } = req.query;
 
     let query = db.select().from(contacts);
     const conditions = [];
@@ -258,19 +268,47 @@ router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) =>
       conditions.push(ownershipCondition(req.user!.userId));
     }
 
-    if (search && typeof search === 'string') {
+    // An explicit selection is exclusive: "export these 12 rows" exports those
+    // 12 rows. Applying the filters as well would silently drop selected rows
+    // that no longer match the current view.
+    const selectedIds = typeof ids === 'string' && ids.length > 0
+      ? ids.split(',').map(v => Number(v.trim())).filter(v => Number.isInteger(v) && v > 0)
+      : [];
+    const onlySelection = selectedIds.length > 0;
+
+    if (onlySelection) {
+      conditions.push(inArray(contacts.id, selectedIds));
+    }
+
+    if (!onlySelection && search && typeof search === 'string') {
       conditions.push(searchCondition(search));
     }
-    if (stage && typeof stage === 'string' && stage !== 'all') conditions.push(eq(contacts.stage, stage));
-    if (activity && typeof activity === 'string') conditions.push(eq(contacts.activity, activity));
-    if (minRating && typeof minRating === 'string') conditions.push(sql`${contacts.googleRating} >= ${Number(minRating)}`);
-    if (hasSite && typeof hasSite === 'string' && hasSite !== 'all') conditions.push(hasSite === 'pas_de_site' ? inArray(contacts.hasSite, ['pas_de_site', 'non']) : eq(contacts.hasSite, hasSite));
-    if (reach === 'true') conditions.push(sql`${contacts.phone} IS NOT NULL AND ${contacts.phone} != ''`);
-    if (reach === 'false') conditions.push(sql`(${contacts.phone} IS NULL OR ${contacts.phone} = '')`);
-    if (city === '__empty__') conditions.push(sql`(${contacts.city} IS NULL OR ${contacts.city} = '')`);
-    else if (city && typeof city === 'string') conditions.push(eq(contacts.city, city));
-    if (minReviews && typeof minReviews === 'string') conditions.push(sql`${contacts.googleReviews} >= ${Number(minReviews)}`);
-    if (hasReviews === 'true') conditions.push(sql`${contacts.googleReviews} IS NOT NULL`);
+    if (!onlySelection) {
+      if (stage && typeof stage === 'string' && stage !== 'all') conditions.push(eq(contacts.stage, stage));
+      if (dnc === 'only') {
+        conditions.push(sql`${contacts.dnc} = 1`);
+      } else if (dnc !== 'include') {
+        conditions.push(sql`coalesce(${contacts.dnc}, 0) = 0`);
+      }
+      // The web export used to drop the language filter entirely, so exporting
+      // "German" silently returned every language.
+      if (language === '__empty__') {
+        conditions.push(isNull(contacts.language));
+      } else if (language && typeof language === 'string' && language !== 'all') {
+        conditions.push(eq(contacts.language, language));
+      }
+      if (activity && typeof activity === 'string') conditions.push(eq(contacts.activity, activity));
+      if (minRating && typeof minRating === 'string') conditions.push(sql`${contacts.googleRating} >= ${Number(minRating)}`);
+      if (hasSite && typeof hasSite === 'string' && hasSite !== 'all') conditions.push(hasSite === 'pas_de_site' ? inArray(contacts.hasSite, ['pas_de_site', 'non']) : eq(contacts.hasSite, hasSite));
+      if (reach === 'true') conditions.push(sql`${contacts.phone} IS NOT NULL AND ${contacts.phone} != ''`);
+      if (reach === 'false') conditions.push(sql`(${contacts.phone} IS NULL OR ${contacts.phone} = '')`);
+    }
+    if (!onlySelection) {
+      if (city === '__empty__') conditions.push(sql`(${contacts.city} IS NULL OR ${contacts.city} = '')`);
+      else if (city && typeof city === 'string' && city !== 'all') conditions.push(eq(contacts.city, city));
+      if (minReviews && typeof minReviews === 'string') conditions.push(sql`${contacts.googleReviews} >= ${Number(minReviews)}`);
+      if (hasReviews === 'true') conditions.push(sql`${contacts.googleReviews} IS NOT NULL`);
+    }
 
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as typeof query;

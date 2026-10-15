@@ -26,6 +26,9 @@ export interface Contact {
   stage: string | null;
   assignedTo: number | null;
   objection: string | null;
+  /** 1 when the business asked not to be called again. */
+  dnc?: number | null;
+  dncReason?: string | null;
   notes: string | null;
   /** 'de' | 'fr' | 'it' | 'en' | null. Detected, not declared by the business. */
   language?: string | null;

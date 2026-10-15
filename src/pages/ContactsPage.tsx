@@ -154,11 +154,12 @@ export function ContactsPage() {
   });
   const [showHidden, setShowHidden] = useState(false);
   const [bulkStage, setBulkStage] = useState('');
+  const [dncFilter, setDncFilter] = useState('exclude');
   const { widths, save: saveWidths } = useColumnWidths();
   const [form, setForm] = useState({
     businessName: '', contactName: '', phone: '', email: '',
     activity: '', city: '', hasSite: '', siteUrl: '', siteStatus: '',
-    source: '', stage: 'identifie', notes: '',
+    source: '', stage: 'identifie', notes: '', dnc: 0, dncReason: '',
   });
   const [formError, setFormError] = useState('');
   const [callForm, setCallForm] = useState({
@@ -167,7 +168,7 @@ export function ContactsPage() {
 
   useEffect(() => {
     loadContacts();
-  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, sortField, sortDir]);
+  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, dncFilter, sortField, sortDir]);
 
   useEffect(() => {
     api.contacts.activities().then(setActivities).catch(() => {});
@@ -191,6 +192,7 @@ export function ContactsPage() {
       if (hasSiteFilter !== 'all') params.hasSite = hasSiteFilter;
       if (cityFilter !== 'all') params.city = cityFilter;
       if (languageFilter !== 'all') params.language = languageFilter;
+      params.dnc = dncFilter;
       if (reachFilter !== 'all') params.reach = reachFilter;
       if (hasReviewsFilter !== 'all') params.hasReviews = hasReviewsFilter;
       if (minReviews) params.minReviews = minReviews;
@@ -293,6 +295,12 @@ export function ContactsPage() {
 
   const handleExport = async () => {
     const params: Record<string, string> = {};
+    // An explicit selection overrides the filters: exporting must not silently
+    // widen to every filtered row.
+    if (selectedIds.size > 0) {
+      params.ids = Array.from(selectedIds).join(',');
+      toast(`Export de la sélection (${selectedIds.size})`, 'success');
+    }
     if (search) params.search = search;
     if (stageFilter !== 'all') params.stage = stageFilter;
     if (activityFilter !== 'all') params.activity = activityFilter;
@@ -300,6 +308,7 @@ export function ContactsPage() {
     if (hasSiteFilter !== 'all') params.hasSite = hasSiteFilter;
     if (cityFilter !== 'all') params.city = cityFilter;
     if (languageFilter !== 'all') params.language = languageFilter;
+    params.dnc = dncFilter;
     if (reachFilter !== 'all') params.reach = reachFilter;
     if (hasReviewsFilter !== 'all') params.hasReviews = hasReviewsFilter;
     if (minReviews) params.minReviews = minReviews;
@@ -365,6 +374,7 @@ export function ContactsPage() {
       businessName: contact.businessName || '', contactName: contact.contactName || '',
       phone: contact.phone || '', email: contact.email || '', activity: contact.activity || '',
       city: contact.city || '', hasSite: contact.hasSite || '', siteUrl: contact.siteUrl || '',
+      dnc: contact.dnc ? 1 : 0, dncReason: contact.dncReason || '',
       siteStatus: contact.siteStatus || '', source: contact.source || '',
       stage: contact.stage || 'identifie', notes: contact.notes || '',
     });
@@ -380,7 +390,7 @@ export function ContactsPage() {
     setForm({
       businessName: '', contactName: '', phone: '', email: '',
       activity: '', city: '', hasSite: '', siteUrl: '', siteStatus: '',
-      source: '', stage: 'identifie', notes: '',
+      source: '', stage: 'identifie', notes: '', dnc: 0, dncReason: '',
     });
   };
 
@@ -448,6 +458,12 @@ export function ContactsPage() {
           <option value="all">Toutes langues</option>
           {Object.entries(LANGUAGES).map(([key, l]) => <option key={key} value={key}>{l.label}</option>)}
           <option value="__empty__">Indéterminée</option>
+        </Select>
+        <Select value={dncFilter} onChange={(e) => { setActivePreset(null); setDncFilter(e.target.value); setPage(1); }}
+          aria-label="Filtrer les prospects ayant refusé un appel">
+          <option value="exclude">Appelables uniquement</option>
+          <option value="only">Refus d'appel uniquement</option>
+          <option value="include">Tous</option>
         </Select>
         <Select value={activityFilter} onChange={(e) => { setActivePreset(null); setActivityFilter(e.target.value); setPage(1); }}>
           <option value="all">Toutes activités</option>
@@ -563,7 +579,14 @@ export function ContactsPage() {
                         className="rounded"
                       />
                     </td>
-                    <td className="px-3 py-2 font-medium truncate" style={{ width: widths.businessName }}>{contact.businessName}</td>
+                    <td className="px-3 py-2 font-medium truncate" style={{ width: widths.businessName }}>
+                      <span className="truncate">{contact.businessName}</span>
+                      {contact.dnc === 1 && (
+                        <Badge variant="destructive" className="ml-1.5 align-middle" title={contact.dncReason || 'Ne plus appeler'}>
+                          Ne pas appeler
+                        </Badge>
+                      )}
+                    </td>
                     <td className="px-3 py-2 truncate" style={{ width: widths.contactName }}>{contact.contactName || '-'}</td>
                     <td className="px-3 py-2 truncate" style={{ width: widths.phone }}>{contact.phone || '-'}</td>
                     <td className="px-3 py-2 truncate text-muted-foreground" style={{ width: widths.activity }}>{contact.activity || '-'}</td>
@@ -715,6 +738,29 @@ export function ContactsPage() {
             <label htmlFor="contact-notes" className="text-sm font-medium">Notes</label>
             <textarea id="contact-notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
               className="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+          </div>
+          <div className="rounded-lg border border-border p-3">
+            <label className="flex min-h-[44px] items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={form.dnc === 1}
+                onChange={(e) => setForm({ ...form, dnc: e.target.checked ? 1 : 0 })}
+                className="h-4 w-4 rounded border-input"
+              />
+              Ne plus appeler (opt-out)
+            </label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Masqué de la file de phoning et des listes pour toute l'équipe, sur tous les appareils.
+            </p>
+            {form.dnc === 1 && (
+              <Input
+                aria-label="Motif du refus d'appel"
+                value={form.dncReason}
+                onChange={e => setForm({ ...form, dncReason: e.target.value })}
+                className="mt-2"
+                placeholder="Motif (ex. : a demandé de ne plus être appelé)"
+              />
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingContact(null); setFormError(''); }}>Annuler</Button>

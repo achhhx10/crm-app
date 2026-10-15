@@ -116,6 +116,11 @@ async function initSchema() {
   -- it was stored and returned by the API but rendered by no screen.
   ALTER TABLE calls ADD COLUMN IF NOT EXISTS next_step_at TIMESTAMP;
   CREATE INDEX IF NOT EXISTS idx_calls_next_step_at ON calls(next_step_at);
+
+  -- Opt-out flag, shared across every rep and every device.
+  ALTER TABLE contacts ADD COLUMN IF NOT EXISTS dnc INTEGER DEFAULT 0;
+  ALTER TABLE contacts ADD COLUMN IF NOT EXISTS dnc_reason TEXT;
+  CREATE INDEX IF NOT EXISTS idx_contacts_dnc ON contacts(dnc);
   `);
 }
 

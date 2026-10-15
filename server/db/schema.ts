@@ -31,6 +31,11 @@ export const contacts = pgTable('contacts', {
   assignedTo: integer('assigned_to').references(() => users.id, { onDelete: 'set null' }),
   objection: text('objection'),
   notes: text('notes'),
+  // Opt-out: the business asked not to be called again. Honoured by the calling
+  // queue by default, because calling back after an objection is a legal and
+  // reputational risk (revDSG) and burns the contact for good.
+  dnc: integer('dnc').default(0),
+  dncReason: text('dnc_reason'),
   // Language of the business, detected from legal form / vocabulary / city / website.
   // 'de' | 'fr' | 'it' | 'en' | null when undetermined.
   language: text('language'),
