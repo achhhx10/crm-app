@@ -18,13 +18,14 @@ const API = (process.env.API_URL || 'https://crm-app-production-9a59.up.railway.
 
 let token = process.env.CRM_TOKEN || '';
 
-async function check(label, path, { expect = [200], shape } = {}) {
+async function check(label, path, { expect = [200], shape, method = 'GET' } = {}) {
   const url = `${API}${path}`;
   let status = 0;
   let body = '';
   let contentType = '';
   try {
     const res = await fetch(url, {
+      method,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       signal: AbortSignal.timeout(20_000),
     });
@@ -125,8 +126,11 @@ const CHECKS = [
     shape: [{ path: 'contacts', type: 'array' }],
   }],
   // Archive remplace la suppression : aucune route DELETE ne doit exister.
-  ['prospects (suppression desactivee)', '/contacts/1', { expect: [404, 405] }],
-  ['prospects (suppression groupee desactivee)', '/contacts/bulk', { expect: [404, 405] }],
+  // These two must actually send DELETE. They previously issued a GET and so
+  // proved nothing about the removed destructive routes.
+  ['prospects (suppression desactivee)', '/contacts/1', { method: 'DELETE', expect: [404, 405] }],
+  ['prospects (suppression groupee desactivee)', '/contacts/bulk', { method: 'DELETE', expect: [404, 405] }],
+  ['prospects (identifiant invalide)', '/contacts/bulk', { expect: [404] }],
   ['prospects (listes)', '/contacts/activities'],
   ['villes', '/contacts/cities'],
   ['appels', '/calls?limit=5', { shape: [{ path: 'calls', type: 'array' }] }],

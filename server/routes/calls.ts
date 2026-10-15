@@ -6,6 +6,7 @@ import { eq, desc, sql, and, count } from 'drizzle-orm';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { resolveRange } from '../utils/dateRange.js';
+import { parseId } from '../utils/paramId.js';
 
 const callSchema = z.object({
   contactId: z.number().int().positive(),
@@ -84,7 +85,12 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 
 router.get('/contact/:contactId', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const conditions = [eq(calls.contactId, Number(req.params.contactId))];
+    const contactId = parseId(req.params.contactId);
+    if (contactId === null) {
+      res.status(404).json({ error: 'Prospect non trouvé' });
+      return;
+    }
+    const conditions = [eq(calls.contactId, contactId)];
     if (!isAdmin(req)) {
       conditions.push(eq(calls.userId, req.user!.userId));
     }

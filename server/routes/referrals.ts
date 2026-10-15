@@ -5,6 +5,7 @@ import { referrals, contacts } from '../db/schema.js';
 import { eq, desc, count, sql, and, inArray } from 'drizzle-orm';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { parseId } from '../utils/paramId.js';
 
 const referralSchema = z.object({
   sourceContactId: z.number().int().positive(),
@@ -77,15 +78,20 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 
 router.get('/contact/:contactId', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
+    const contactId = parseId(req.params.contactId);
+    if (contactId === null) {
+      res.status(404).json({ error: 'Prospect non trouvé' });
+      return;
+    }
     if (!isAdmin(req)) {
-      const contact = (await db.select().from(contacts).where(eq(contacts.id, Number(req.params.contactId))))[0];
+      const contact = (await db.select().from(contacts).where(eq(contacts.id, contactId)))[0];
       if (!contact || (contact.assignedTo !== null && contact.assignedTo !== req.user!.userId)) {
         res.status(403).json({ error: 'Accès interdit' });
         return;
       }
     }
     const contactReferrals = await db.select().from(referrals)
-      .where(eq(referrals.sourceContactId, Number(req.params.contactId)))
+      .where(eq(referrals.sourceContactId, contactId))
       .orderBy(desc(referrals.createdAt));
 
     const total = contactReferrals.length;
@@ -159,7 +165,11 @@ router.post('/', authMiddleware, validate(referralSchema), async (req: AuthReque
 
 router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
+    if (id === null) {
+      res.status(404).json({ error: 'Recommandation non trouvée' });
+      return;
+    }
     const existing = (await db.select().from(referrals).where(eq(referrals.id, id)))[0];
     if (!existing) {
       res.status(404).json({ error: 'Recommandation non trouvée' });

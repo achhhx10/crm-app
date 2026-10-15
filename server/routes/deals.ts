@@ -6,6 +6,7 @@ import { eq, desc, sql, count, and } from 'drizzle-orm';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { resolveRange } from '../utils/dateRange.js';
+import { parseId } from '../utils/paramId.js';
 
 const dealSchema = z.object({
   contactId: z.number().int().positive(),
@@ -129,7 +130,11 @@ router.post('/', authMiddleware, validate(dealSchema), async (req: AuthRequest, 
 
 router.put('/:id', authMiddleware, validate(dealUpdateSchema), async (req: AuthRequest, res: Response) => {
   try {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
+    if (id === null) {
+      res.status(404).json({ error: 'Deal non trouvé' });
+      return;
+    }
     const existing = (await db.select().from(deals).where(eq(deals.id, id)))[0];
     if (!existing) {
       res.status(404).json({ error: 'Deal non trouvé' });
@@ -159,7 +164,12 @@ router.put('/:id', authMiddleware, validate(dealUpdateSchema), async (req: AuthR
 
 router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
-    const deleted = await db.delete(deals).where(eq(deals.id, Number(req.params.id))).returning({ id: deals.id });
+    const targetId = parseId(req.params.id);
+    if (targetId === null) {
+      res.status(404).json({ error: 'Deal non trouvé' });
+      return;
+    }
+    const deleted = await db.delete(deals).where(eq(deals.id, targetId)).returning({ id: deals.id });
     if (deleted.length === 0) {
       res.status(404).json({ error: 'Deal non trouvé' });
       return;

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
+import { parseId } from '../utils/paramId.js';
 import { contacts, users, calls } from '../db/schema.js';
 import { eq, desc, asc, sql, and, count, or, isNull, inArray } from 'drizzle-orm';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
@@ -458,7 +459,12 @@ router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) =>
 
 router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const contact = (await db.select().from(contacts).where(eq(contacts.id, Number(req.params.id))))[0];
+    const id = parseId(req.params.id);
+    if (id === null) {
+      res.status(404).json({ error: 'Prospect non trouvé' });
+      return;
+    }
+    const contact = (await db.select().from(contacts).where(eq(contacts.id, id)))[0];
     if (!contact) {
       res.status(404).json({ error: 'Prospect non trouvé' });
       return;
@@ -589,7 +595,11 @@ router.put('/bulk-assign', authMiddleware, requireRole('admin'), async (req: Aut
 
 router.put('/:id', authMiddleware, validate(contactSchema.partial()), async (req: AuthRequest, res: Response) => {
   try {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
+    if (id === null) {
+      res.status(404).json({ error: 'Prospect non trouvé' });
+      return;
+    }
     const existing = (await db.select().from(contacts).where(eq(contacts.id, id)))[0];
     if (!existing) {
       res.status(404).json({ error: 'Prospect non trouvé' });
@@ -653,7 +663,7 @@ router.put('/bulk-archive', authMiddleware, requireRole('admin'), async (req: Au
  */
 router.post('/:id/archive', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id)!;
     const existing = (await db.select({ archivedAt: contacts.archivedAt })
       .from(contacts).where(eq(contacts.id, id)))[0];
     if (!existing) {

@@ -5,6 +5,7 @@ import { eq, and, ne } from 'drizzle-orm';
 import { hashPassword, comparePassword } from '../utils/password.js';
 import { generateToken } from '../utils/jwt.js';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
+import { parseId } from '../utils/paramId.js';
 
 const router = Router();
 
@@ -108,7 +109,11 @@ router.get('/users', authMiddleware, requireRole('admin'), async (_req, res) => 
 
 router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
+    if (id === null) {
+      res.status(404).json({ error: 'Utilisateur non trouvé' });
+      return;
+    }
     if (id === req.user!.userId) {
       res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte' });
       return;
@@ -126,7 +131,11 @@ router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: Au
 
 router.put('/users/:id', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
+    if (id === null) {
+      res.status(404).json({ error: 'Utilisateur non trouvé' });
+      return;
+    }
     if (!Number.isInteger(id)) {
       res.status(400).json({ error: 'Identifiant invalide' });
       return;
