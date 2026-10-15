@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -123,18 +124,57 @@ export function ContactsPage() {
   const defaultReach: 'all' | 'true' | 'false' = isAdmin ? 'all' : 'true';
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [stageFilter, setStageFilter] = useState('all');
-  const [activityFilter, setActivityFilter] = useState('all');
-  const [minRating, setMinRating] = useState('');
-  const [hasSiteFilter, setHasSiteFilter] = useState('all');
-  const [cityFilter, setCityFilter] = useState('all');
-  const [languageFilter, setLanguageFilter] = useState('all');
-  const [reachFilter, setReachFilter] = useState<'all' | 'true' | 'false'>(defaultReach);
-  const [hasReviewsFilter, setHasReviewsFilter] = useState('all');
-  const [minReviews, setMinReviews] = useState('');
-  const [activePreset, setActivePreset] = useState<string | null>(null);
+  // Filters live in the URL so Back, refresh and sharing a link all behave.
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const patch = useCallback((changes: Record<string, string | null>) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === null || value === '' || value === 'all') next.delete(key);
+        else next.set(key, value);
+      }
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const urlStr = (key: string, fallback: string) => searchParams.get(key) ?? fallback;
+
+  const page = Math.max(1, Number(searchParams.get('page')) || 1);
+  const search = urlStr('q', '');
+  const stageFilter = urlStr('stage', 'all');
+  const activityFilter = urlStr('activity', 'all');
+  const minRating = urlStr('minRating', '');
+  const hasSiteFilter = urlStr('hasSite', 'all');
+  const cityFilter = urlStr('city', 'all');
+  const languageFilter = urlStr('language', 'all');
+  const reachFilter = urlStr('reach', defaultReach) as 'all' | 'true' | 'false';
+  const hasReviewsFilter = urlStr('hasReviews', 'all');
+  const minReviews = urlStr('minReviews', '');
+  const activePreset = searchParams.get('preset');
+  const dncFilterUrl = urlStr('dnc', 'exclude');
+  const assigneeFilterUrl = urlStr('assignedTo', 'all');
+
+  // Any filter change resets to page 1; a page change keeps the filters.
+  const setFilter = useCallback((key: string) => (value: string | null) => {
+    patch({ [key]: value, page: null });
+  }, [patch]);
+  const setPage = useCallback((value: number) => {
+    patch({ page: value === 1 ? null : String(value) });
+  }, [patch]);
+  const setSearch = useCallback((value: string) => patch({ q: value || null, page: null }), [patch]);
+  const setStageFilter = setFilter('stage');
+  const setActivityFilter = setFilter('activity');
+  const setMinRating = setFilter('minRating');
+  const setHasSiteFilter = setFilter('hasSite');
+  const setCityFilter = setFilter('city');
+  const setLanguageFilter = setFilter('language');
+  const setReachFilter = setFilter('reach');
+  const setHasReviewsFilter = setFilter('hasReviews');
+  const setMinReviews = setFilter('minReviews');
+  const setActivePreset = setFilter('preset');
+  const setDncFilter = setFilter('dnc');
+  const setAssigneeFilter = setFilter('assignedTo');
   const [activities, setActivities] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,8 +183,10 @@ export function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [quickCallContact, setQuickCallContact] = useState<Contact | null>(null);
   const [quickCallStartedAt, setQuickCallStartedAt] = useState<number>(Date.now());
-  const [sortField, setSortField] = useState('opportunity');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const sortField = urlStr('sortBy', 'opportunity');
+  const sortDir = urlStr('sortDir', 'desc') as 'asc' | 'desc';
+  const setSortField = useCallback((v: string) => patch({ sortBy: v === 'opportunity' ? null : v }), [patch]);
+  const setSortDir = useCallback((v: 'asc' | 'desc') => patch({ sortDir: v === 'desc' ? null : v }), [patch]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(() => {
     try {
@@ -154,8 +196,8 @@ export function ContactsPage() {
   });
   const [showHidden, setShowHidden] = useState(false);
   const [bulkStage, setBulkStage] = useState('');
-  const [dncFilter, setDncFilter] = useState('exclude');
-  const [assigneeFilter, setAssigneeFilter] = useState('all');
+  const dncFilter = dncFilterUrl;
+  const assigneeFilter = assigneeFilterUrl;
   const [bulkAssignee, setBulkAssignee] = useState('');
   const [team, setTeam] = useState<{ id: number; name: string }[]>([]);
   const { widths, save: saveWidths } = useColumnWidths();
@@ -224,31 +266,32 @@ export function ContactsPage() {
   const handleSearch = () => { setPage(1); loadContacts(); };
 
   const applyPreset = (id: string) => {
-    setPage(1);
-    if (activePreset === id) {
-      setActivePreset(null);
-      setHasSiteFilter('all');
-      setReachFilter(defaultReach);
-      setMinRating('');
-      setCityFilter('all');
-      setHasReviewsFilter('all');
-      setMinReviews('');
-      return;
-    }
     const p = PRESETS.find((x) => x.id === id);
-    if (!p) return;
-    setHasSiteFilter(p.filters.hasSite || 'all');
-    setMinRating(p.filters.minRating || '');
-    setCityFilter(p.filters.city || 'all');
-    setHasReviewsFilter(p.filters.hasReviews || 'all');
-    setMinReviews(p.filters.minReviews || '');
-    if (p.filters.reach) setReachFilter(p.filters.reach as 'true' | 'false');
-    setActivePreset(id);
+    // A preset replaces the whole view. It used to leave stage/activity/language
+    // untouched, so a stale filter produced an empty table with no explanation.
+    // One patch, so every filter moves together.
+    patch(activePreset === id
+      ? {
+          preset: null, page: null,
+          hasSite: null, reach: defaultReach === 'all' ? null : defaultReach,
+          minRating: null, city: null, hasReviews: null, minReviews: null,
+          stage: null, activity: null, language: null,
+        }
+      : {
+          preset: id, page: null,
+          hasSite: p?.filters.hasSite || null,
+          minRating: p?.filters.minRating || null,
+          city: p?.filters.city || null,
+          hasReviews: p?.filters.hasReviews || null,
+          minReviews: p?.filters.minReviews || null,
+          reach: p?.filters.reach || null,
+          stage: null, activity: null, language: null,
+        });
   };
 
   const handleSort = (field: string) => {
     if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
       setSortDir('asc');
@@ -706,9 +749,9 @@ export function ContactsPage() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex justify-center gap-2">
-          <Button variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Précédent</Button>
+          <Button variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Précédent</Button>
           <span className="flex items-center px-4 text-sm text-muted-foreground">Page {page} / {totalPages}</span>
-          <Button variant="outline" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Suivant</Button>
+          <Button variant="outline" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Suivant</Button>
         </div>
       )}
 
