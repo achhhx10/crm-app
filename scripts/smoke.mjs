@@ -152,6 +152,13 @@ const CHECKS = [
   ['origines', '/dashboard/sources', {
     shape: [{ path: 'rows', type: 'array' }],
   }],
+  ['diagnostics', '/dashboard/diagnostics', {
+    shape: [
+      { path: 'cycle.signedCount', type: 'number' },
+      { path: 'openQuotes.count', type: 'number' },
+      { path: 'limits', type: 'array' },
+    ],
+  }],
   ['deals', '/deals?limit=5'],
   ['deals (statistiques)', '/deals/stats'],
   ['recommandations', '/referrals?limit=5'],

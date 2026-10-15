@@ -165,7 +165,29 @@ router.get('/funnel', authMiddleware, async (req: AuthRequest, res: Response) =>
       };
     });
 
-    res.json({ range, steps, note: 'Les visites et demandes entrantes ne sont pas suivies par ce CRM.' });
+    // The leaky step is the one that loses the most, not the smallest bar: with
+    // 39k prospects and a handful of calls, every absolute number is dominated
+    // by the first stage.
+    let friction: { from: string; to: string; label: string; conversion: number } | null = null;
+    for (let i = 1; i < steps.length; i += 1) {
+      const c = steps[i].conversionFromPrevious;
+      if (c === null || steps[i].value === 0) continue;
+      if (!friction || c < friction.conversion) {
+        friction = {
+          from: steps[i - 1].key,
+          to: steps[i].key,
+          label: steps[i].label,
+          conversion: c,
+        };
+      }
+    }
+
+    res.json({
+      range,
+      steps,
+      friction,
+      note: 'Les visites et demandes entrantes ne sont pas suivies par ce CRM.',
+    });
   } catch (error) {
     console.error('Dashboard funnel error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -231,6 +253,82 @@ router.get('/sources', authMiddleware, async (req: AuthRequest, res: Response) =
     res.json({ range, rows, note: 'Origine du prospect. Le ROI n\'est pas calculable : aucune donnée de dépense.' });
   } catch (error) {
     console.error('Dashboard sources error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+/**
+ * Level 2 diagnostic: how long the cycle takes, and what is stalling.
+ *
+ * Three things are honestly measurable here:
+ *  - days between a quote being written and being signed
+ *  - how long open quotes have been waiting
+ *  - where the funnel leaks (returned by /funnel)
+ *
+ * Time in stage for a prospect is NOT available: contacts.stage holds only the
+ * current value and no stage history is recorded anywhere. Anything claiming a
+ * number here would be invented.
+ */
+router.get('/diagnostics', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const range = resolveRange(req.query as Record<string, unknown>);
+    const userId = req.user!.userId;
+
+
+    const openRows = await db.execute(sql`
+      SELECT id, amount, EXTRACT(EPOCH FROM (NOW() - ${deals.createdAt})) / 86400 AS age
+      FROM ${deals}
+      WHERE ${deals.status} = ${IN_PROGRESS}
+      ORDER BY ${deals.createdAt} ASC
+      LIMIT 200
+    `).catch(() => ({ rows: [] as any[] }));
+
+    const signedRows = await db.execute(sql`
+      SELECT EXTRACT(EPOCH FROM (${deals.signedAt} - ${deals.createdAt})) / 86400 AS days
+      FROM ${deals}
+      WHERE ${deals.status} = ${SIGNED}
+        AND ${deals.signedAt} >= ${range.from} AND ${deals.signedAt} <= ${range.to}
+        AND ${deals.createdAt} IS NOT NULL
+    `).catch(() => ({ rows: [] as any[] }));
+
+    const clean = (v: any) => Number(v) || 0;
+    const durations = (signedRows.rows as any[])
+      .map(r => clean(r.days))
+      .filter(d => d >= 0)
+      .sort((a, b) => a - b);
+
+    const median = durations.length
+      ? (durations.length % 2
+          ? durations[(durations.length - 1) / 2]
+          : (durations[durations.length / 2 - 1] + durations[durations.length / 2]) / 2)
+      : null;
+
+    const ages = (openRows.rows as any[]).map(r => clean(r.age)).filter(a => a >= 0);
+    const oldest = (openRows.rows as any[])[0];
+
+    res.json({
+      range,
+      cycle: {
+        signedCount: durations.length,
+        averageDays: durations.length
+          ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+          : null,
+        medianDays: median === null ? null : Math.round(median),
+      },
+      openQuotes: {
+        count: ages.length,
+        averageAgeDays: ages.length
+          ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length)
+          : null,
+        oldestAgeDays: ages.length ? Math.round(ages[ages.length - 1]) : null,
+        oldestAmount: oldest ? Number(oldest.amount) : null,
+      },
+      limits: [
+        'Le temps passé par étape sur un prospect est indisponible : contacts.stage ne garde que la valeur courante.',
+      ],
+    });
+  } catch (error) {
+    console.error('Dashboard diagnostics error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

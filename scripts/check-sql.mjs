@@ -12,6 +12,7 @@
  * execution. Run `npm run smoke` against a real deployment for that.
  */
 import { drizzle } from 'drizzle-orm/node-postgres';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import * as schema from '../server/db/schema.ts';
 import {
@@ -51,6 +52,14 @@ function checkSeedVocabulary() {
 // A pool that is never connected to: toSQL() does not need one.
 const pool = new Pool({ connectionString: 'postgres://x:x@127.0.0.1:1/none', max: 1 });
 const db = drizzle(pool, { schema });
+
+// db.execute() runs immediately and has no toSQL(), so raw sql templates are
+// rendered through the dialect directly. Same output, still no connection.
+const dialect = new PgDialect();
+const raw = (template) => {
+  const rendered = dialect.sqlToQuery(template);
+  return { toSQL: () => rendered };
+};
 const { contacts, calls, deals } = schema;
 
 const SIGNED = 'signe';
@@ -87,6 +96,18 @@ const QUERIES = {
     qualified: sql`count(*) FILTER (WHERE ${inArray(contacts.stage, QUALIFIED_STAGES)})`,
   }).from(contacts).where(ownedContacts).groupBy(contacts.source).orderBy(desc(count())),
 
+  // Diagnostics: interval arithmetic on timestamps.
+  'diag: duree signature': () => raw(sql`
+    SELECT EXTRACT(EPOCH FROM (${deals.signedAt} - ${deals.createdAt})) / 86400 AS days
+    FROM ${deals}
+    WHERE ${deals.status} = ${SIGNED}
+      AND ${deals.signedAt} >= ${new Date('2026-10-01')} AND ${deals.signedAt} <= ${new Date('2026-10-31')}
+      AND ${deals.createdAt} IS NOT NULL
+  `),
+  'diag: age des devis ouverts': () => raw(sql`
+    SELECT id, amount, EXTRACT(EPOCH FROM (NOW() - ${deals.createdAt})) / 86400 AS age
+    FROM ${deals} WHERE ${deals.status} = ${IN_PROGRESS} ORDER BY ${deals.createdAt} ASC LIMIT 200
+  `),
   'sources: agrégat deals': () => db.select({
     source: contacts.source,
     quotes: count(),
@@ -105,7 +126,8 @@ for (const [label, build] of Object.entries(QUERIES)) {
   try {
     const { sql: text, params } = build().toSQL();
     const problems = [];
-    if (!text || !/^\s*select/i.test(text)) problems.push('ne commence pas par SELECT');
+    if (!text) problems.push('SQL vide');
+    else if (!/^\s*select/i.test(text)) problems.push('ne commence pas par SELECT');
     if (/\bundefined\b/.test(text)) problems.push('contient "undefined"');
     if (/\$\{\s*\}/.test(text)) problems.push('contient un gabarit non résolu');
     if (!text.includes('"')) problems.push('aucun identifiant quoté');

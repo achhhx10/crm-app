@@ -201,6 +201,10 @@ export const api = {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
       return request<any>(`/dashboard/funnel${q}`);
     },
+    diagnostics: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/dashboard/diagnostics${q}`);
+    },
     sources: (params?: Record<string, string>) => {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
       return request<any>(`/dashboard/sources${q}`);

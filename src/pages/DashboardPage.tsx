@@ -88,6 +88,8 @@ export function DashboardPage() {
   const [funnel, setFunnel] = useState<FunnelStep[]>([]);
   const [funnelNote, setFunnelNote] = useState('');
   const [sources, setSources] = useState<any[]>([]);
+  const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [friction, setFriction] = useState<any>(null);
   const [sourcesNote, setSourcesNote] = useState('');
   const [pipelineData, setPipelineData] = useState<PipelineData | null>(null);
   const [performance, setPerformance] = useState<PerformanceData[]>([]);
@@ -109,10 +111,11 @@ export function DashboardPage() {
       if (range.to) params.to = range.to;
     }
     try {
-      const [k, f, src, p, perf, act, obj, due] = await Promise.all([
+      const [k, f, src, diag, p, perf, act, obj, due] = await Promise.all([
         api.dashboard.kpis(params),
         api.dashboard.funnel(params),
         api.dashboard.sources(params),
+        api.dashboard.diagnostics(params),
         api.dashboard.pipeline(),
         api.dashboard.performance(params),
         api.dashboard.activity(params),
@@ -121,6 +124,8 @@ export function DashboardPage() {
       ]);
       setKpis(k);
       setFunnel(f.steps || []);
+      setFriction(f.friction ?? null);
+      setDiagnostics(diag ?? null);
       setFunnelNote(f.note || '');
       setSources(src.rows || []);
       setSourcesNote(src.note || '');
@@ -143,6 +148,13 @@ export function DashboardPage() {
     const compare = kpis.previousRange ? ` · comparaison ${kpis.previousRange.label}` : '';
     return `Période analysée : ${kpis.range.label}${days}${compare}`;
   })();
+
+  const cycle = diagnostics?.cycle?.signedCount
+    ? diagnostics.cycle
+    : null;
+  const stalled = diagnostics?.openQuotes?.count
+    ? diagnostics.openQuotes
+    : null;
 
   const params = (() => {
     const out: Record<string, string> = {};
@@ -268,6 +280,39 @@ export function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {(friction || cycle || stalled) && (
+              <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {friction && (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                      <AlertTriangle className="h-3.5 w-3.5" /> Point de fuite
+                    </p>
+                    <p className="mt-1 text-sm">
+                      {friction.conversion > 0 && friction.conversion < 1 ? '<1 %' : `${friction.conversion} %`}
+                      <span className="text-muted-foreground"> arrive à {friction.label.toLowerCase()}</span>
+                    </p>
+                  </div>
+                )}
+                {cycle && (
+                  <div className="rounded-lg border border-border bg-muted/40 p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Cycle de vente</p>
+                    <p className="mt-1 text-sm">
+                      {cycle.medianDays ?? cycle.averageDays ?? '—'} jours
+                      <span className="text-muted-foreground"> pour signer un devis</span>
+                    </p>
+                  </div>
+                )}
+                {stalled && (
+                  <div className="rounded-lg border border-warning/30 bg-warning/5 p-3">
+                    <p className="text-xs font-medium text-warning">Devis en attente</p>
+                    <p className="mt-1 text-sm">
+                      {stalled.oldestAgeDays} jours
+                      <span className="text-muted-foreground"> sans réponse, {formatCurrency(stalled.oldestAmount)}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             {funnel.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">Aucune donnée</p>
             ) : (
