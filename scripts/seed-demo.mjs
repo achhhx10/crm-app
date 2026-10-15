@@ -13,7 +13,9 @@
  *
  *   # once, from your machine
  *   railway domain --service Postgres --port 5432
- *   export DATABASE_URL='postgres://...@<proxy>:5432/railway'
+ *   export PGHOST=postgres-production-XXXX.up.railway.app PGPORT=5432
+ *   export PGUSER=postgres PGDATABASE=railway
+ *   export PGPASSWORD="$(railway variables --service Postgres --kv | grep '^PGPASSWORD=' | cut -d= -f2-)"
  *
  *   npm run seed:demo        # insert
  *   npm run seed:demo -- --undo   # remove, and nothing else
@@ -23,6 +25,14 @@
  * from real data, and their ids are written to .demo-seed.json for an exact undo.
  */
 import pg from 'pg';
+import { pathToFileURL } from 'node:url';
+// The same vocabularies the interface renders from, so demo data cannot drift
+// into codes the UI displays as raw strings.
+import { CALL_RESULTS, OBJECTIONS, SITE_STATUSES, STAGES } from '../src/lib/utils.ts';
+
+// Deal statuses are declared inside DealsPage rather than in lib/utils; kept
+// inline here rather than refactoring the page inside a data fix.
+const DEAL_STATUSES = { en_cours: 1, signe: 1, perdu: 1 };
 
 const { Client } = pg;
 
@@ -39,7 +49,7 @@ const day = (offset) => {
   return d;
 };
 
-const CONTACTS = [
+export const CONTACTS = [
   ['Boulangerie Marten',        'Marten',        'boulangerie',  '+41 32 123 45 67', 'Delémont',   'pas_de_site',    'identifie',        'internet',        4.8, 52],
   ['Café du Marché',             'Aebischer',     'café',          '+41 32 987 65 43', 'Bienne',     'site_fonctionnel','interesse',       'google_maps',     4.6, 88],
   ['Garage Zenetti',             null,            'garage',        '+41 79 555 12 34', 'La Chaux',   'pas_de_site',    'contacte',        'bouche_a_oreille', 4.2, 17],
@@ -53,24 +63,24 @@ const CONTACTS = [
 ];
 
 // [contactIndex, dayOffset, result, objection|null, notes, nextStep|null, nextStepDayOffset|null]
-const CALLS = [
+export const CALLS = [
   [0,  0, 'pas_decroche', null,                 'Pas de réponse', null, null],
   [0,  4, 'messagerie',   null,                 'Message vocal', null, null],
   [0, 11, 'pas_decroche', null,                 'Toujours injoignable', null, null],
   [1,  2, 'rdv_obtenu',   null,                 'Rendez-vous mardi 10h', 'Envoyer la proposition', 6],
   [1, 12, 'interesse',    'trop_cher',         'Budget serré cette année', 'Relancer après devis', 3],
-  [2,  3, 'pas_interesse','pas_le_temps',      'Pas le temps de refaire le site', null, null],
+  [2,  3, 'pas_interesse','pas_de_temps',       'Pas le temps de refaire le site', null, null],
   [2, 17, 'pas_decroche', null,                 'Aucune réponse', null, null],
   [3,  5, 'rdv_obtenu',   null,                 'Rendez-vous obtenu', null, null],
-  [3, 20, 'proposition',  null,                 'Devis vitrine transmis', null, null],
+  [3, 20, 'interesse',    null,                 'Devis vitrine transmis', null, null],
   [4,  6, 'interesse',    'trop_cher',         'Compare 3 devis', null, null],
-  [4, 22, 'interesse',    'pas_decideur',      'Doit valider avec le comptable', 'Relancer le comptable', 1],
-  [5,  7, 'pas_interesse','mauvaise_qualite',  'Réponse trop évasive', null, null],
+  [4, 22, 'interesse',    'faut_en_parler',    'Doit valider avec le comptable', 'Relancer le comptable', 1],
+  [5,  7, 'pas_interesse','autre',             'Réponse trop évasive', null, null],
   [6,  8, 'rdv_obtenu',   null,                 'Signature validerie', null, null],
-  [6, 30, 'proposition',  null,                 'Contrat signé', null, null],
+  [6, 30, 'rdv_obtenu',   null,                 'Contrat signé', null, null],
   [7,  9, 'interesse',    'trop_cher',         'Intéressé par le multilingue', null, null],
   [7, 26, 'pas_decroche', null,                 'Pas de réponse', null, null],
-  [8, 13, 'pas_interesse','pas_le_temps',      'En cours de modernisation', 'Rappeler dans 2 mois', 45],
+  [8, 13, 'pas_interesse','pas_de_temps',       'En cours de modernisation', 'Rappeler dans 2 mois', 45],
   [9, 14, 'pas_decroche', null,                 'Pas de réponse', null, null],
   [0, 40, 'pas_decroche', null,                 'Relance 2', null, null],
   [8, 41, 'pas_decroche', null,                 'Relance 2', null, null],
@@ -80,7 +90,7 @@ const CALLS = [
 ];
 
 // [contactIndex, dayOffset, amount, status, siteType, signedDayOffset|null]
-const DEALS = [
+export const DEALS = [
   [6, 30, 6800, 'signe',     'vitrine_complete', 30],
   [3, 20, 4200, 'signe',     'vitrine_simple',   38],
   [1, 12, 3200, 'en_cours',  'vitrine_simple',   null],
@@ -90,6 +100,7 @@ const DEALS = [
 ];
 
 if (dryRun) {
+  assertVocabulary();
   console.log(`Mode simulation — ${CONTACTS.length} contacts, ${CALLS.length} appels, ${DEALS.length} deals.`);
   console.log(`Période : ${day(0).toISOString().slice(0, 10)} → ${day(44).toISOString().slice(0, 10)}`);
   const sources = new Set(CONTACTS.map(c => c[7]));
@@ -103,14 +114,62 @@ if (dryRun) {
 }
 
 
-async function main() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    console.error('DATABASE_URL est requis (le proxy TCP Railway expose Postgres sur un hôte public).');
-    process.exit(2);
+/** Accepts either DATABASE_URL or the standard PG* variables psql uses. */
+function connection() {
+  if (process.env.DATABASE_URL) return { connectionString: process.env.DATABASE_URL };
+  const { PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD } = process.env;
+  if (PGHOST && PGUSER) {
+    return {
+      host: PGHOST,
+      port: Number(PGPORT || 5432),
+      user: PGUSER,
+      database: PGDATABASE || 'railway',
+      password: PGPASSWORD,
+    };
   }
+  console.error(
+    'Connexion Postgres requise :\n' +
+    '  export PGHOST=... PGPORT=5432 PGUSER=postgres PGDATABASE=railway\n' +
+    '  export PGPASSWORD="$(railway variables --service Postgres --kv | grep \'^PGPASSWORD=\' | cut -d= -f2-)"\n' +
+    'ou DATABASE_URL.',
+  );
+  process.exit(2);
+}
 
-  const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });
+/**
+ * Returns every value the interface would render as a raw string. Pure: it
+ * never exits, so importing this module (check-sql does) stays side-effect free
+ * and each caller decides what to do with the problems.
+ */
+export function validateVocabulary() {
+  const problems = [];
+  for (const [i, c] of CONTACTS.entries()) {
+    if (!SITE_STATUSES[c[5]]) problems.push(`contact ${c[0]}: site_status « ${c[5]} » inconnu`);
+    if (!STAGES[c[6]]) problems.push(`contact ${c[0]}: stage « ${c[6]} » inconnu`);
+  }
+  for (const [ci, , result, objection] of CALLS) {
+    if (!CALL_RESULTS[result]) problems.push(`appel sur ${CONTACTS[ci][0]}: result « ${result} » inconnu`);
+    if (objection && !OBJECTIONS[objection]) problems.push(`appel sur ${CONTACTS[ci][0]}: objection « ${objection} » inconnue`);
+  }
+  for (const [ci, , , status] of DEALS) {
+    if (!DEAL_STATUSES[status]) problems.push(`deal sur ${CONTACTS[ci][0]}: status « ${status} » inconnu`);
+  }
+  return problems;
+}
+
+/** Refuses to seed rather than writing values the interface cannot render. */
+export function assertVocabulary() {
+  const problems = validateVocabulary();
+  if (problems.length) {
+    console.error('Vocabulaire incohérent avec l\'application :');
+    for (const p of problems) console.error('  -', p);
+    process.exit(1);
+  }
+}
+
+async function main() {
+  assertVocabulary();
+  const client = new Client({ ...connection(), ssl: { rejectUnauthorized: false } });
   await client.connect();
 
   try {
@@ -159,7 +218,7 @@ async function main() {
             stage, source, google_rating, google_reviews, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
         [name, person === '—' ? null : person, activity, phone, city,
-         hasSite, hasSite === 'pas_de_site' ? 'pas_de_site' : 'ok',
+         hasSite, hasSite,
          stage, source, rating, reviews, day(0)],
       );
       contactIds.push(res.rows[0].id);
@@ -207,4 +266,8 @@ async function main() {
   }
 }
 
-main();
+// Importing this module must not open a connection: check-sql.mjs reads the
+// data above without touching a database.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

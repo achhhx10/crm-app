@@ -18,6 +18,33 @@ import {
   sql, count, countDistinct, sum, eq, and, gte, lte, inArray, desc,
 } from 'drizzle-orm';
 import { resolveRange, previousRange, trend } from '../server/utils/dateRange.ts';
+import { CALL_RESULTS, OBJECTIONS, SITE_STATUSES, STAGES } from '../src/lib/utils.ts';
+import { CONTACTS, CALLS, DEALS, validateVocabulary } from './seed-demo.mjs';
+
+// Deal statuses live inside DealsPage rather than lib/utils; kept inline here
+// rather than refactoring the page inside a data check.
+const DEAL_STATUSES = { en_cours: 1, signe: 1, perdu: 1 };
+
+/**
+ * The demo dataset has to speak the same vocabulary as the interface, or the
+ * dashboard renders raw strings like "proposition" instead of a label. Three
+ * invalid codes slipped through review once; this runs on every check.
+ */
+function checkSeedVocabulary() {
+  const problems = [];
+  for (const c of CONTACTS) {
+    if (!SITE_STATUSES[c[5]]) problems.push(`contact ${c[0]}: site_status « ${c[5]} » absent de SITE_STATUSES`);
+    if (!STAGES[c[6]]) problems.push(`contact ${c[0]}: stage « ${c[6]} » absent de STAGES`);
+  }
+  for (const [ci, , result, objection] of CALLS) {
+    if (!CALL_RESULTS[result]) problems.push(`appel sur ${CONTACTS[ci][0]}: result « ${result} » absent de CALL_RESULTS`);
+    if (objection && !OBJECTIONS[objection]) problems.push(`appel sur ${CONTACTS[ci][0]}: objection « ${objection} » absente de OBJECTIONS`);
+  }
+  for (const [ci, , , status] of DEALS) {
+    if (!DEAL_STATUSES[status]) problems.push(`deal sur ${CONTACTS[ci][0]}: status « ${status} » inconnu`);
+  }
+  return problems;
+}
 
 // A pool that is never connected to: toSQL() does not need one.
 const pool = new Pool({ connectionString: 'postgres://x:x@127.0.0.1:1/none', max: 1 });
@@ -110,6 +137,15 @@ for (const [label, got, expected] of cases) {
   const ok = typeof expected === 'boolean' ? expected : String(expected) === got;
   console.log(`  ${ok ? '✓' : '✗'} ${label}: ${got}`);
   if (!ok) failures += 1;
+}
+
+// Vocabulary of the demo dataset, checked against what the UI renders.
+const vocab = checkSeedVocabulary();
+console.log('\nVocabulaire du jeu de démonstration');
+if (vocab.length) {
+  for (const p of vocab) { console.error(`  ✗ ${p}`); failures += 1; }
+} else {
+  console.log('  ✓ tout correspond aux vocabulaires de l\'interface');
 }
 
 await pool.end();
