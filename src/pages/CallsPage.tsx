@@ -123,6 +123,8 @@ export function CallsPage() {
 
   return (
     <div className="space-y-6">
+      <DateRangePicker value={range} preset={rangePreset} onChange={onRangeChange} />
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>

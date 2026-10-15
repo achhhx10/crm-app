@@ -164,6 +164,8 @@ export function DealsPage() {
 
   return (
     <div className="space-y-6">
+      <DateRangePicker value={range} preset={rangePreset} onChange={onRangeChange} />
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
