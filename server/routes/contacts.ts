@@ -359,7 +359,7 @@ router.get('/cities', authMiddleware, async (_req, res) => {
 
 router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, stage, activity, minRating, hasSite, city, reach, minReviews, hasReviews, dnc, language, ids } = req.query;
+    const { search, stage, activity, minRating, hasSite, city, reach, minReviews, hasReviews, dnc, language, ids, archived } = req.query;
 
     let query = db.select().from(contacts);
     const conditions = [];
@@ -408,6 +408,15 @@ router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) =>
       else if (city && typeof city === 'string' && city !== 'all') conditions.push(eq(contacts.city, city));
       if (minReviews && typeof minReviews === 'string') conditions.push(sql`${contacts.googleReviews} >= ${Number(minReviews)}`);
       if (hasReviews === 'true') conditions.push(sql`${contacts.googleReviews} IS NOT NULL`);
+    }
+
+    // Mirror the list route: a CSV export is a prospect list, so archived rows
+    // stay hidden unless the caller explicitly asks for them. Without this the
+    // export leaked every archived prospect the table already hides.
+    if (archived === 'only') {
+      conditions.push(sql`${contacts.archivedAt} IS NOT NULL`);
+    } else if (archived !== 'include') {
+      conditions.push(sql`${contacts.archivedAt} IS NULL`);
     }
 
     if (conditions.length > 0) {

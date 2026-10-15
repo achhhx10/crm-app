@@ -5,6 +5,7 @@ import { contacts, calls, deals } from '../db/schema.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { resolveRange, previousRange, trend } from '../utils/dateRange.js';
 import { dueActions, HOT_PHONE_AFTER_DAYS, STALE_QUOTE_AFTER_DAYS } from '../utils/actions.js';
+import { isAdmin, ownedContacts } from '../utils/ownership.js';
 
 /**
  * Reporting endpoints for the dashboard.
@@ -17,10 +18,6 @@ import { dueActions, HOT_PHONE_AFTER_DAYS, STALE_QUOTE_AFTER_DAYS } from '../uti
 
 const router = Router();
 
-function isAdmin(req: AuthRequest): boolean {
-  return req.user?.role === 'admin';
-}
-
 const SIGNED = 'signe';
 const IN_PROGRESS = 'en_cours';
 // A lead is "qualified" once it reaches a stage where a commercial conversation
@@ -28,14 +25,8 @@ const IN_PROGRESS = 'en_cours';
 const QUALIFIED_STAGES = ['interesse', 'rdv_programme', 'proposition_envoyee', 'signe'];
 
 /** Contacts the caller is allowed to see, as a drizzle condition. */
-function ownedContacts(req: AuthRequest, userId: number) {
-  return isAdmin(req)
-    ? sql`1=1`
-    : sql`(${contacts.assignedTo} = ${userId} OR ${contacts.assignedTo} IS NULL)`;
-}
-
 function ownedDeals(req: AuthRequest, userId: number) {
-  return isAdmin(req) ? sql`1=1` : sql`${deals.assignedTo} = ${userId}`;
+  return isAdmin(req.user) ? sql`1=1` : sql`${deals.assignedTo} = ${userId}`;
 }
 
 function inPeriod(column: any, from: Date, to: Date) {
@@ -127,12 +118,12 @@ router.get('/funnel', authMiddleware, async (req: AuthRequest, res: Response) =>
     const userId = req.user!.userId;
 
     const [prospectsRow, contactedRow, qualifiedRow, quotesRow, signedRow] = await Promise.all([
-      db.select({ value: count() }).from(contacts).where(ownedContacts(req, userId)),
+      db.select({ value: count() }).from(contacts).where(ownedContacts(req.user, userId)),
       db.select({ value: countDistinct(calls.contactId) }).from(calls).where(
-        isAdmin(req) ? sql`1=1` : eq(calls.userId, userId),
+        isAdmin(req.user) ? sql`1=1` : eq(calls.userId, userId),
       ),
       db.select({ value: count() }).from(contacts).where(and(
-        ownedContacts(req, userId),
+        ownedContacts(req.user, userId),
         inArray(contacts.stage, QUALIFIED_STAGES),
       )),
       db.select({ value: count() }).from(deals).where(and(
@@ -208,7 +199,7 @@ router.get('/sources', authMiddleware, async (req: AuthRequest, res: Response) =
   try {
     const range = resolveRange(req.query as Record<string, unknown>);
     const userId = req.user!.userId;
-    const scope = ownedContacts(req, userId);
+    const scope = ownedContacts(req.user, userId);
 
     const contactRows = await db
       .select({

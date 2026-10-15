@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { db } from '../db/index.js';
 import { contacts, calls, deals, referrals, users } from '../db/schema.js';
-import { eq, sql, count, desc, and } from 'drizzle-orm';
+import { eq, sql, count, desc, and, isNull } from 'drizzle-orm';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { resolveRange } from '../utils/dateRange.js';
 
@@ -24,8 +24,10 @@ router.get('/summary', authMiddleware, async (req: AuthRequest, res: Response) =
 
     // Contacts are a stock, never a flow: not filtered by period.
     const totalContacts = isAdmin(req)
-      ? (await db.select({ value: count() }).from(contacts))[0]?.value ?? 0
-      : (await db.select({ value: count() }).from(contacts).where(eq(contacts.assignedTo, userId)))[0]?.value ?? 0;
+      // Keep the legacy aggregate aligned with ownedContacts(): the mobile
+      // prospect counter must not include rows the web table hides.
+      ? (await db.select({ value: count() }).from(contacts).where(isNull(contacts.archivedAt)))[0]?.value ?? 0
+      : (await db.select({ value: count() }).from(contacts).where(and(eq(contacts.assignedTo, userId), isNull(contacts.archivedAt))))[0]?.value ?? 0;
 
     const totalCalls = (await db.select({ value: count() }).from(calls)
       .where(and(...scoped([inRange], req, calls.userId, userId))))[0]?.value ?? 0;

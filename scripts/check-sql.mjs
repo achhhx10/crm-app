@@ -24,6 +24,7 @@ import { CALL_RESULTS, OBJECTIONS, SITE_STATUSES, STAGES } from '../src/lib/util
 import { CONTACTS, CALLS, DEALS } from '../server/demo/seedData.ts';
 import { validateVocabulary } from './seed-demo.mjs';
 import { followUpsQuery, staleQuotesQuery, coldHotQuery } from '../server/utils/actionQueries.ts';
+import { ownedContacts } from '../server/utils/ownership.ts';
 
 // Deal statuses live inside DealsPage rather than lib/utils; kept inline here
 // rather than refactoring the page inside a data check.
@@ -66,7 +67,8 @@ const { contacts, calls, deals } = schema;
 const SIGNED = 'signe';
 const IN_PROGRESS = 'en_cours';
 const QUALIFIED_STAGES = ['interesse', 'rdv_programme', 'proposition_envoyee', 'signe'];
-const ownedContacts = sql`1=1`;
+// Import the production scope instead of a local replica: a copy silently
+// drifts (it once hid the archived_at filter the dashboard really applies).
 const ownedDeals = sql`1=1`;
 const inPeriod = (column, from, to) => and(gte(column, from), lte(column, to));
 
@@ -197,6 +199,18 @@ if (vocab.length) {
   for (const p of vocab) { console.error(`  ✗ ${p}`); failures += 1; }
 } else {
   console.log('  ✓ tout correspond aux vocabulaires de l\'interface');
+}
+
+// Every contact-scoped aggregate must hide archived prospects, exactly like the
+// prospect list. A local replica of this scope once drifted and hid the filter,
+// so assert it on the rendered SQL rather than trusting the source.
+console.log('\nExclusion des archives dans les agrégats');
+const scope = dialect.sqlToQuery(sql`SELECT 1 FROM contacts WHERE ${ownedContacts({ role: 'admin', userId: 1 })}`).sql;
+if (String(scope).includes('archived_at') && String(scope).includes('IS NULL')) {
+  console.log('  ✓ le scope de production filtre archived_at');
+} else {
+  console.error(`  ✗ le scope de production ne filtre pas les archives : ${scope}`);
+  failures += 1;
 }
 
 await pool.end();

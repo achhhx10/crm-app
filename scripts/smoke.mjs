@@ -22,12 +22,14 @@ async function check(label, path, { expect = [200], shape } = {}) {
   const url = `${API}${path}`;
   let status = 0;
   let body = '';
+  let contentType = '';
   try {
     const res = await fetch(url, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       signal: AbortSignal.timeout(20_000),
     });
     status = res.status;
+    contentType = res.headers.get('content-type') || '';
     body = await res.text();
   } catch (err) {
     console.error(`  ✗ ${label}\n      ${path}\n      réseau: ${err.message}`);
@@ -36,6 +38,16 @@ async function check(label, path, { expect = [200], shape } = {}) {
 
   if (status >= 500) {
     console.error(`  ✗ ${label}\n      ${path}\n      HTTP ${status} — ${body.slice(0, 300)}`);
+    return false;
+  }
+
+  // Both Railway and Vercel answer unknown API paths with the SPA index.html
+  // and HTTP 200. A status-only check happily calls that a success, so reject
+  // any HTML payload before looking at the expected status.
+  if (contentType.includes('text/html')) {
+    console.error(
+      `  ✗ ${label}\n      ${path}\n      HTTP ${status} mais réponse HTML (fallback SPA) — la route n'existe pas`,
+    );
     return false;
   }
   if (!expect.includes(status)) {
