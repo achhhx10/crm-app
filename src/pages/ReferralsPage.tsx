@@ -12,7 +12,6 @@ import { ContactPicker, PickedContact } from '../components/ui/contact-picker';
 import { useToast } from '../components/ui/toast';
 import { formatDate } from '../lib/utils';
 import { Pagination } from '../components/ui/pagination';
-import type { Contact } from '../types';
 
 const REFERRAL_STATUS_LABELS: Record<string, string> = {
   contacte: 'Contacté',
@@ -31,7 +30,6 @@ function normaliseReferralStatus(value: string | null | undefined): string {
 export function ReferralsPage() {
   const { toast } = useToast();
   const [referrals, setReferrals] = useState<any[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -44,7 +42,6 @@ export function ReferralsPage() {
 
   useEffect(() => {
     loadReferrals();
-    loadContacts();
   }, [page]);
 
   const loadReferrals = async () => {
@@ -63,14 +60,6 @@ export function ReferralsPage() {
     }
   };
 
-  const loadContacts = async () => {
-    try {
-      const { contacts } = await api.contacts.list({ limit: '1000' });
-      setContacts(contacts);
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -555,52 +555,52 @@ export function ContactsPage() {
             />
           </div>
         </div>
-        <Select value={stageFilter} onChange={(e) => { setActivePreset(null); setStageFilter(e.target.value); setPage(1); }}>
+        <Select className="w-auto" value={stageFilter} onChange={(e) => { setActivePreset(null); setStageFilter(e.target.value); setPage(1); }}>
           <option value="all">Tous les stages</option>
           {Object.entries(STAGES).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
         </Select>
-        <Select value={languageFilter} onChange={(e) => { setActivePreset(null); setLanguageFilter(e.target.value); setPage(1); }}>
+        <Select className="w-auto" value={languageFilter} onChange={(e) => { setActivePreset(null); setLanguageFilter(e.target.value); setPage(1); }}>
           <option value="all">Toutes langues</option>
           {Object.entries(LANGUAGES).map(([key, l]) => <option key={key} value={key}>{l.label}</option>)}
           <option value="__empty__">Indéterminée</option>
         </Select>
         {isAdmin ? (
-          <Select value={assigneeFilter} onChange={(e) => { setActivePreset(null); setAssigneeFilter(e.target.value); setPage(1); }}
+          <Select className="w-auto" value={assigneeFilter} onChange={(e) => { setActivePreset(null); setAssigneeFilter(e.target.value); setPage(1); }}
             aria-label="Filtrer par commercial">
             <option value="all">Tous les commerciaux</option>
             <option value="unassigned">Non assignés</option>
             {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
           </Select>
         ) : null}
-        <Select value={archivedFilter} onChange={(e) => { setActivePreset(null); setArchivedFilter(e.target.value); setPage(1); }}
+        <Select className="w-auto" value={archivedFilter} onChange={(e) => { setActivePreset(null); setArchivedFilter(e.target.value); setPage(1); }}
           aria-label="Filtrer les prospects archivés">
           <option value="exclude">Hors archives</option>
           <option value="only">Archives uniquement</option>
           <option value="include">Tous</option>
         </Select>
-        <Select value={calledFilter} onChange={(e) => { setActivePreset(null); setCalledFilter(e.target.value); setPage(1); }}
+        <Select className="w-auto" value={calledFilter} onChange={(e) => { setActivePreset(null); setCalledFilter(e.target.value); setPage(1); }}
           aria-label="Filtrer par historique d'appel">
           <option value="all">Tous les prospects</option>
           <option value="never">Jamais appelés</option>
           <option value="already">Déjà appelés</option>
         </Select>
-        <Select value={dncFilter} onChange={(e) => { setActivePreset(null); setDncFilter(e.target.value); setPage(1); }}
+        <Select className="w-auto" value={dncFilter} onChange={(e) => { setActivePreset(null); setDncFilter(e.target.value); setPage(1); }}
           aria-label="Filtrer les prospects ayant refusé un appel">
           <option value="exclude">Appelables uniquement</option>
           <option value="only">Refus d'appel uniquement</option>
           <option value="include">Tous</option>
         </Select>
-        <Select value={activityFilter} onChange={(e) => { setActivePreset(null); setActivityFilter(e.target.value); setPage(1); }}>
+        <Select className="w-auto" value={activityFilter} onChange={(e) => { setActivePreset(null); setActivityFilter(e.target.value); setPage(1); }}>
           <option value="all">Toutes activités</option>
           {activities.map(a => <option key={a} value={a}>{a}</option>)}
         </Select>
-        <Select value={hasSiteFilter} onChange={(e) => { setActivePreset(null); setHasSiteFilter(e.target.value); setPage(1); }}>
+        <Select className="w-auto" value={hasSiteFilter} onChange={(e) => { setActivePreset(null); setHasSiteFilter(e.target.value); setPage(1); }}>
           <option value="all">Tous sites</option>
           <option value="pas_de_site">Pas de site</option>
           <option value="site_fonctionnel">Site fonctionnel</option>
           <option value="site_vetuste">Site vétuste</option>
         </Select>
-        <Select value={cityFilter} onChange={(e) => { setActivePreset(null); setCityFilter(e.target.value); setPage(1); }}>
+        <Select className="w-auto" value={cityFilter} onChange={(e) => { setActivePreset(null); setCityFilter(e.target.value); setPage(1); }}>
           <option value="all">Toutes villes</option>
           <option value="__empty__">Sans ville</option>
           {cities.map(c => <option key={c} value={c}>{c}</option>)}

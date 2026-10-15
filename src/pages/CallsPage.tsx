@@ -13,7 +13,6 @@ import { DateRangePicker } from '../components/ui/date-range';
 import { ContactPicker, PickedContact } from '../components/ui/contact-picker';
 import { useToast } from '../components/ui/toast';
 import { CALL_RESULTS, OBJECTIONS, formatDate, formatDateTime, formatDuration } from '../lib/utils';
-import type { Contact } from '../types';
 
 /** A scheduled callback that has passed its date. */
 function isOverdue(nextStepAt: string | number | Date): boolean {
@@ -23,6 +22,7 @@ function isOverdue(nextStepAt: string | number | Date): boolean {
 export function CallsPage() {
   const { toast } = useToast();
   const [onlyFollowUps, setOnlyFollowUps] = useState(false);
+  const [filterContact, setFilterContact] = useState<PickedContact | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const rangePreset = searchParams.get('range') || 'month';
   const range = { from: searchParams.get('from') || '', to: searchParams.get('to') || '' };
@@ -46,7 +46,6 @@ export function CallsPage() {
     return out;
   };
   const [calls, setCalls] = useState<any[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -58,7 +57,6 @@ export function CallsPage() {
 
   useEffect(() => {
     loadCalls();
-    loadContacts();
   }, [contactFilter, onlyFollowUps, rangePreset, range.from, range.to]);
 
   const loadCalls = async () => {
@@ -82,14 +80,6 @@ export function CallsPage() {
     }
   };
 
-  const loadContacts = async () => {
-    try {
-      const { contacts } = await api.contacts.list({ limit: '1000' });
-      setContacts(contacts);
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,11 +168,16 @@ export function CallsPage() {
           />
           Relances dues ou en retard
         </label>
-        <div className="flex-1 min-w-[200px]">
-          <Select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)}>
-            <option value="">Tous les contacts</option>
-            {contacts.map(c => <option key={c.id} value={String(c.id)}>{c.businessName}</option>)}
-          </Select>
+        <div className="flex-1 min-w-[220px]">
+          <label htmlFor="calls-contact-filter" className="text-sm font-medium">
+            Filtrer par prospect
+          </label>
+          <ContactPicker
+            id="calls-contact-filter"
+            value={filterContact}
+            onChange={(c) => setContactFilter(c ? String(c.id) : '')}
+            placeholder="Tous les prospects — rechercher pour filtrer"
+          />
         </div>
         <Button onClick={() => { resetForm(); setShowForm(true); }}>
           <Plus className="h-4 w-4 mr-2" /> Enregistrer un appel
