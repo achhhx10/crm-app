@@ -146,10 +146,15 @@
     border: 1px solid hsl(var(--glass-border) / var(--glass-border-alpha));
   }
 
-  /* A lit edge, to read as a bevel catching light rather than a drawn border. */
-  .glass-edge {
-    position: relative;
-  }
+  /*
+   * A lit edge, to read as a bevel catching light rather than a drawn border.
+   *
+   * `position: relative` deliberately lives on the Card itself, as a Tailwind
+   * `relative` class. Declared here instead, the dark variant compiled to
+   * `.dark\:glass-edge:is(.dark *)` at specificity (0,2,0), which outranked
+   * `.lg\:sticky` (0,1,0) and turned the sticky queue panel into a
+   * relatively-positioned box pushed down by its own `top-6`.
+   */
   .glass-edge::before {
     content: '';
     position: absolute;

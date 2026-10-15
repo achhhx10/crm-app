@@ -11,7 +11,10 @@ export function Card({ className = '', interactive = false, children, ...props }
       className={cn(
         // Frosted panel in the dark theme; the heavy black drop shadows are
         // replaced by a diffuse halo in the dominant colour.
-        'rounded-lg border bg-card text-card-foreground transition-[box-shadow,transform] duration-200',
+        // `relative` anchors the glass edge pseudo-element. As a Tailwind class
+        // it shares (0,1,0) specificity with lg:sticky, so a sticky Card still
+        // sticks; see the note in index.css.
+        'relative rounded-lg border bg-card text-card-foreground transition-[box-shadow,transform] duration-200',
         'dark:glass dark:glass-edge dark:glow-primary',
         interactive && 'dark:glow-lift',
         className
