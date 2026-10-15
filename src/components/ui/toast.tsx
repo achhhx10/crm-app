@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle2, XCircle, Info, X } from 'lucide-react';
+import { cn } from '../../lib/utils';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -85,7 +86,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: 24, scale: 0.95 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                className={`pointer-events-auto relative flex items-start gap-3 overflow-hidden rounded-lg px-4 py-3 text-sm text-white shadow-lg ${config.className}`}
+                className={cn(
+                  'pointer-events-auto relative flex items-start gap-3 overflow-hidden rounded-lg px-4 py-3 text-sm text-white shadow-lg',
+                  config.className
+                )}
               >
                 <Icon className="mt-0.5 h-4 w-4 shrink-0" />
                 <span className="flex-1">{t.message}</span>

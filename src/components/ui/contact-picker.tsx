@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../../lib/api';
+import { cn } from '../../lib/utils';
 
 export interface PickedContact {
   id: number;
@@ -154,7 +155,7 @@ export function ContactPicker({
               aria-selected={index === highlight}
               onMouseDown={(e) => { e.preventDefault(); select(contact); }}
               onMouseEnter={() => setHighlight(index)}
-              className={`cursor-pointer px-3 py-2 text-sm ${index === highlight ? 'bg-muted' : ''}`}
+              className={cn('cursor-pointer px-3 py-2 text-sm', index === highlight && 'bg-muted')}
             >
               <span className="font-medium">{contact.businessName || contact.contactName || `#${contact.id}`}</span>
               {contact.city && <span className="ml-2 text-muted-foreground">{contact.city}</span>}

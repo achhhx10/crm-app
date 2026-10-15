@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { cn } from '../../lib/utils';
 
 export interface DateRange {
   from: string; // yyyy-mm-dd
@@ -65,10 +66,10 @@ interface DateRangePickerProps {
 export function DateRangePicker({ value, preset, onChange, className = '' }: DateRangePickerProps) {
   const today = useMemo(() => iso(new Date()), []);
 
-  const inputClass = 'h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  const inputClass = cn('h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring');
 
   return (
-    <div className={`flex flex-wrap items-end gap-2 ${className}`}>
+    <div className={cn('flex flex-wrap items-end gap-2', className)}>
       <div className="flex flex-wrap gap-1" role="group" aria-label="Période">
         {RANGE_PRESETS.map(p => (
           <button

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { cn } from '../../lib/utils';
 
 interface DialogProps {
   open: boolean;
@@ -54,7 +55,7 @@ export function Dialog({ open, onClose, children, className = '' }: DialogProps)
             role="dialog"
             aria-modal="true"
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full max-w-lg rounded-lg border border-border bg-card text-card-foreground shadow-xl focus:outline-none ${className}`}
+            className={cn('relative w-full max-w-lg rounded-lg border border-border bg-card text-card-foreground shadow-xl focus:outline-none', className)}
             initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
@@ -69,13 +70,13 @@ export function Dialog({ open, onClose, children, className = '' }: DialogProps)
 }
 
 export function DialogHeader({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`flex flex-col space-y-1.5 text-center sm:text-left ${className}`}>{children}</div>;
+  return <div className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)}>{children}</div>;
 }
 
 export function DialogTitle({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <h2 className={`text-lg font-semibold leading-none tracking-tight ${className}`}>{children}</h2>;
+  return <h2 className={cn('text-lg font-semibold leading-none tracking-tight', className)}>{children}</h2>;
 }
 
 export function DialogFooter({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:space-x-2 ${className}`}>{children}</div>;
+  return <div className={cn('mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:space-x-2', className)}>{children}</div>;
 }

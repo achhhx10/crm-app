@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { cn } from '../../lib/utils';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -129,7 +130,7 @@ export function AnimatedContent({
   ]);
 
   return (
-    <div ref={ref} className={`invisible ${className}`} {...props}>
+    <div ref={ref} className={cn('invisible', className)} {...props}>
       {children}
     </div>
   );

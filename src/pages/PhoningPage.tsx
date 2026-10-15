@@ -643,10 +643,15 @@ function FiltersBar({
 }) {
   return (
     <Card>
-      <CardContent className="flex flex-wrap items-center gap-3 py-3">
-        <PhoneCall className="h-5 w-5 text-primary" />
+      {/*
+        py-3 alone left the base pt-0 in force and the icon sat on the top
+        border. Padding is now set once, and the selects carry a max width so
+        the row wraps instead of overflowing.
+      */}
+      <CardContent className="flex flex-wrap items-center gap-2 py-3">
+        <PhoneCall className="h-5 w-5 shrink-0 text-primary" aria-hidden />
         <Select
-          className="w-auto"
+          className="w-auto max-w-[13rem]"
           value={filters.reach}
           onChange={e => setFilters({ ...filters, reach: e.target.value })}
           aria-label="File"
@@ -655,7 +660,7 @@ function FiltersBar({
           <option value="false">Sans téléphone (à enrichir)</option>
         </Select>
         <Select
-          className="w-auto"
+          className="w-auto max-w-[13rem]"
           value={filters.hasSite}
           onChange={e => setFilters({ ...filters, hasSite: e.target.value })}
           aria-label="Site"
@@ -665,7 +670,7 @@ function FiltersBar({
           <option value="site_fonctionnel">Site fonctionnel</option>
         </Select>
         <Select
-          className="w-auto"
+          className="w-auto max-w-[13rem]"
           value={filters.stage}
           onChange={e => setFilters({ ...filters, stage: e.target.value })}
           aria-label="Stage"
@@ -674,7 +679,7 @@ function FiltersBar({
           {Object.entries(STAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </Select>
         <Select
-          className="w-auto"
+          className="w-auto max-w-[13rem]"
           value={filters.language}
           onChange={e => setFilters({ ...filters, language: e.target.value })}
           aria-label="Langue"
@@ -692,7 +697,7 @@ function FiltersBar({
           />
           Inclure les prospects déjà appelés
         </label>
-        <span className="text-sm text-muted-foreground ml-auto">
+        <span className="ml-auto text-sm text-muted-foreground">
           {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {queueSummary(total, remaining, loaded)}
         </span>
