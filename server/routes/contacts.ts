@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { contacts, users } from '../db/schema.js';
+import { contacts, users, calls } from '../db/schema.js';
 import { eq, desc, asc, sql, and, count, or, isNull, inArray } from 'drizzle-orm';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -75,28 +75,44 @@ function searchCondition(search: string) {
 /**
  * Last call per contact for one page of results, scoped to the viewer for
  * non-admins. Returns a map keyed by contact id.
+ *
+ * Built with the query builder rather than raw SQL: `WHERE id = ANY($1)` binds a
+ * JS array as a single parameter that PostgreSQL does not recognise as an array
+ * (42809 "op ANY/ALL (array) requires array on right side"), which took the whole
+ * contact list down. inArray() is the supported form and is already proven on the
+ * bulk and export routes.
+ *
+ * No row cap: an incorrect count is worse than a slightly larger transfer, and
+ * the IN list is index-backed on idx_calls_contact.
  */
 async function loadCallInfo(ids: number[], userId: number | null): Promise<Record<number, { lastCallAt: any; lastCallResult: string; callCount: number }>> {
   if (ids.length === 0) return {};
-  const rows = await db.execute(sql`
-    SELECT DISTINCT ON (contact_id)
-      contact_id,
-      date AS "lastCallAt",
-      result AS "lastCallResult",
-      COUNT(*) OVER (PARTITION BY contact_id) AS "callCount"
-    FROM calls
-    WHERE contact_id = ANY(${ids})
-      ${userId === null ? sql`` : sql`AND user_id = ${userId}`}
-    ORDER BY contact_id, date DESC
-  `);
+
+  const conditions = [inArray(calls.contactId, ids)];
+  if (userId !== null) conditions.push(eq(calls.userId, userId));
+
+  const rows = await db
+    .select({
+      contactId: calls.contactId,
+      date: calls.date,
+      result: calls.result,
+    })
+    .from(calls)
+    .where(and(...conditions))
+    // Oldest contact first, most recent call first: the first row seen for a
+    // contact is its latest call, and the rest only increment the counter.
+    .orderBy(asc(calls.contactId), desc(calls.date));
 
   const out: Record<number, { lastCallAt: any; lastCallResult: string; callCount: number }> = {};
-  for (const row of rows.rows as any[]) {
-    out[Number(row.contact_id)] = {
-      lastCallAt: row.lastCallAt,
-      lastCallResult: row.lastCallResult,
-      callCount: Number(row.callCount),
-    };
+  for (const row of rows) {
+    const key = row.contactId;
+    if (key === null) continue;
+    const existing = out[key];
+    if (existing) {
+      existing.callCount += 1;
+    } else {
+      out[key] = { lastCallAt: row.date, lastCallResult: row.result, callCount: 1 };
+    }
   }
   return out;
 }
@@ -271,12 +287,20 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     const total = (await countQuery)[0]?.value ?? 0;
 
     // Calling history for the rows on this page only, fetched separately so the
-    // contact projection above can never lose a column. DISTINCT ON picks the
-    // most recent call per contact while the window function counts them all.
-    const callInfo = await loadCallInfo(
-      allContacts.map((c: any) => c.id),
-      isAdmin(req) ? null : req.user!.userId,
-    );
+    // contact projection above can never lose a column.
+    //
+    // Enrichment must never be able to fail the primary read. An unguarded query
+    // here is what turned a cosmetic column into a full outage of the prospect
+    // list, so a failure degrades to "no history shown" instead of a 500.
+    let callInfo: Record<number, { lastCallAt: any; lastCallResult: string; callCount: number }> = {};
+    try {
+      callInfo = await loadCallInfo(
+        allContacts.map((c: any) => c.id),
+        isAdmin(req) ? null : req.user!.userId,
+      );
+    } catch (err) {
+      console.error('Call history enrichment failed, serving list without it:', err);
+    }
     const withCalls = allContacts.map((c: any) => ({
       ...c,
       lastCallAt: callInfo[c.id]?.lastCallAt ?? null,
