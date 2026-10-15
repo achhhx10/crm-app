@@ -24,6 +24,10 @@ const PRESETS: { id: string; label: string; icon: React.ElementType; hint: strin
   { id: 'avec_avis', label: 'Avec avis', icon: Star, hint: '10 avis Google ou plus', filters: { hasReviews: 'true', minReviews: '10' } },
 ];
 
+// Sum of defaultColWidths: keeps `fixed` layout from crushing columns when the
+// viewport is narrower than the table.
+const TABLE_MIN_WIDTH = 1540;
+
 const defaultColWidths: Record<string, number> = {
   checkbox: 40,
   businessName: 220,
@@ -674,7 +678,16 @@ export function ContactsPage() {
       {/* Table */}
       <Card>
         <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+          {/*
+            tableLayout:fixed sizes columns from the header row. The declared
+            widths total more than the panel, so the browser used to shrink every
+            column and the new "Dernier appel" column overlapped its own text.
+            A min-width makes the card scroll horizontally instead of squeezing.
+          */}
+          <table
+            className="w-full text-sm"
+            style={{ tableLayout: 'fixed', minWidth: TABLE_MIN_WIDTH }}
+          >
             <thead>
               <tr className="border-b">
                 <th className="h-10 px-2 text-left" style={{ width: widths.checkbox }}>

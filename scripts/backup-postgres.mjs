@@ -22,6 +22,7 @@ import pg from 'pg';
 import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const { Client } = pg;
 
@@ -36,9 +37,17 @@ const TABLES = [
 
 const BACKUP_ROOT = 'backups';
 
+/**
+ * PG* variables win over DATABASE_URL on purpose.
+ *
+ * Railway injects DATABASE_URL pointing at its *internal* TCP proxy
+ * (localhost:5432), which is unreachable from a developer machine and only
+ * works inside the service container. The PG* variables are the public ones
+ * copied from `railway variables`, so they must be preferred when running a
+ * backup/restore locally.
+ */
 export function connection() {
   const { DATABASE_URL, PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD } = process.env;
-  if (DATABASE_URL) return { connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } };
   if (PGHOST && PGUSER) {
     return {
       host: PGHOST,
@@ -49,10 +58,13 @@ export function connection() {
       ssl: { rejectUnauthorized: false },
     };
   }
+  if (DATABASE_URL) {
+    return { connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } };
+  }
   console.error(
     'Connexion requise :\n' +
-    '  DATABASE_URL=... ou\n' +
-    '  export PGHOST=... PGPORT=5432 PGUSER=postgres PGDATABASE=railway PGPASSWORD=...',
+    '  export PGHOST=... PGPORT=5432 PGUSER=postgres PGDATABASE=railway PGPASSWORD=...\n' +
+    '  (ou DATABASE_URL=... pour un run depuis le conteneur Railway)',
   );
   process.exit(2);
 }
@@ -155,12 +167,20 @@ async function latestBackup() {
   return entries.length ? join(BACKUP_ROOT, entries[entries.length - 1]) : null;
 }
 
-const [command, arg] = process.argv.slice(2);
-
-if (command === 'restore' || command === '--restore') {
-  const dir = arg && !arg.startsWith('--') ? arg : await latestBackup();
-  if (!dir) { console.error('Aucune sauvegarde trouvée.'); process.exit(1); }
-  await restore(dir, process.argv.includes('--dry-run'));
-} else {
+async function main() {
+  const [command, arg] = process.argv.slice(2);
+  if (command === 'restore' || command === '--restore') {
+    const dir = arg && !arg.startsWith('--') ? arg : await latestBackup();
+    if (!dir) { console.error('Aucune sauvegarde trouvée.'); process.exit(1); }
+    await restore(dir, process.argv.includes('--dry-run'));
+    return;
+  }
   await backup();
 }
+
+// Same guard as scripts/seed-demo.mjs so `connection()` stays unit-testable.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
+
+export { main };
