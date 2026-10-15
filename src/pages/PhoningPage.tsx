@@ -13,6 +13,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { CALL_RESULTS, OBJECTIONS, STAGES, LANGUAGES, formatDateTime, formatDuration } from '../lib/utils';
 import type { Contact, Call } from '../types';
 
+const PAGE_SIZE = 500;
+const PREFETCH_MARGIN = 25;
+
 const QUEUE_KEY = 'crm_phoning_queue';
 const DRAFT_PREFIX = 'crm_phoning_draft_';
 
@@ -50,6 +53,9 @@ export function PhoningPage() {
   const [index, setIndex] = useState(0);
   const [done, setDone] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({ result: '', objection: '', notes: '', nextStep: '' });
@@ -66,24 +72,29 @@ export function PhoningPage() {
 
   /* ---------- queue loading ---------- */
 
+  const buildParams = useCallback((f: Filters, page: number): Record<string, string> => {
+    const params: Record<string, string> = {
+      excludeCalled: 'true',
+      sortBy: 'opportunity',
+      sortDir: 'desc',
+      limit: String(PAGE_SIZE),
+      page: String(page),
+    };
+    if (f.reach) params.reach = f.reach;
+    if (f.stage) params.stage = f.stage;
+    if (f.hasSite) params.hasSite = f.hasSite;
+    if (f.language) params.language = f.language;
+    return params;
+  }, []);
+
   const loadQueue = useCallback(async (f: Filters) => {
     setLoading(true);
     try {
-      const params: Record<string, string> = {
-        excludeCalled: 'true',
-        sortBy: 'opportunity',
-        sortDir: 'desc',
-        limit: '500',
-        page: '1',
-      };
-      if (f.reach) params.reach = f.reach;
-      if (f.stage) params.stage = f.stage;
-      if (f.hasSite) params.hasSite = f.hasSite;
-      if (f.language) params.language = f.language;
-
-      const { contacts, total: t } = await api.contacts.list(params);
+      const { contacts, total: t } = await api.contacts.list(buildParams(f, 1));
       setQueue(contacts || []);
       setTotal(t || 0);
+      setPage(1);
+      setHasMore((contacts || []).length === PAGE_SIZE);
       setIndex(0);
       setDone(new Set());
     } catch (err) {
@@ -92,9 +103,40 @@ export function PhoningPage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [buildParams, toast]);
+
+  // Prefetch the next batch before the user reaches the end of the loaded queue.
+  const loadMore = useCallback(async () => {
+    if (loading || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const next = page + 1;
+      const { contacts } = await api.contacts.list(buildParams(filters, next));
+      const incoming = contacts || [];
+      if (incoming.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      // Logging a call drops that lead from excludeCalled, which shifts later pages by
+      // one; dedupe on id so the shift can never produce the same lead twice.
+      setQueue(prev => {
+        const seen = new Set(prev.map(c => c.id));
+        return [...prev, ...incoming.filter(c => !seen.has(c.id))];
+      });
+      setPage(next);
+      setHasMore(incoming.length === PAGE_SIZE);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [buildParams, filters, hasMore, loading, loadingMore, page]);
 
   useEffect(() => { loadQueue(filters); }, [filters, loadQueue]);
+
+  useEffect(() => {
+    if (queue.length > 0 && index >= queue.length - PREFETCH_MARGIN) loadMore();
+  }, [index, queue.length, loadMore]);
 
   // restore session position
   useEffect(() => {
@@ -269,7 +311,8 @@ export function PhoningPage() {
   if (queue.length === 0) {
     return (
       <div className="space-y-4">
-        <FiltersBar filters={filters} setFilters={setFilters} total={total} remaining={remaining} />
+        <FiltersBar filters={filters} setFilters={setFilters} total={total} remaining={remaining}
+          loaded={queue.length} loadingMore={loadingMore} />
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <Check className="h-10 w-10 text-success mb-3" />
@@ -289,7 +332,8 @@ export function PhoningPage() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <FiltersBar filters={filters} setFilters={setFilters} total={total} remaining={remaining} />
+      <FiltersBar filters={filters} setFilters={setFilters} total={total} remaining={remaining}
+          loaded={queue.length} loadingMore={loadingMore} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Lead + form */}
@@ -536,12 +580,14 @@ export function PhoningPage() {
 }
 
 function FiltersBar({
-  filters, setFilters, total, remaining,
+  filters, setFilters, total, remaining, loaded, loadingMore,
 }: {
   filters: Filters;
   setFilters: React.Dispatch<React.SetStateAction<Filters>>;
   total: number;
   remaining: number;
+  loaded: number;
+  loadingMore: boolean;
 }) {
   return (
     <Card>
@@ -586,17 +632,19 @@ function FiltersBar({
           <option value="__empty__">Indéterminée</option>
         </Select>
         <span className="text-sm text-muted-foreground ml-auto">
-          {queueSummary(total, remaining)}
+          {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {queueSummary(total, remaining, loaded)}
         </span>
       </CardContent>
     </Card>
   );
 }
 
-function queueSummary(total: number, remaining: number): string {
+function queueSummary(total: number, remaining: number, loaded: number): string {
   if (total === 0) return 'Aucun prospect';
-  if (total > 500) return `${remaining} restant${remaining > 1 ? 's' : ''} sur 500+ prospec${total > 1 ? 'ts' : 't'}`;
-  return `${remaining} restant${remaining > 1 ? 's' : ''} sur ${total} prospect${total > 1 ? 's' : ''}`;
+  const rest = `${remaining} restant${remaining > 1 ? 's' : ''}`;
+  if (loaded < total) return `${rest} · ${loaded} chargés sur ${total} disponibles`;
+  return `${rest} sur ${total} prospect${total > 1 ? 's' : ''}`;
 }
 
 export default PhoningPage;

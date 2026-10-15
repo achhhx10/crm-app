@@ -7,7 +7,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
 import { useToast } from '../components/ui/toast';
-import { Plus, Trash2, Shield, User } from 'lucide-react';
+import { Plus, Pencil, Shield, User } from 'lucide-react';
 
 export function UsersPage() {
   const { toast } = useToast();
@@ -17,6 +17,9 @@ export function UsersPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'demarcheur' });
   const [formError, setFormError] = useState('');
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', email: '', role: 'demarcheur', password: '' });
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     loadUsers();
@@ -46,6 +49,32 @@ export function UsersPage() {
     } catch (err: any) {
       toast("Erreur lors de la création de l'utilisateur", 'error');
       setFormError(err?.message || "Erreur lors de la création");
+    }
+  };
+
+  const openEdit = (u: any) => {
+    setEditingUser(u);
+    setEditForm({ name: u.name, email: u.email, role: u.role || 'demarcheur', password: '' });
+    setEditError('');
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setEditError('');
+    const payload: { name: string; email: string; role: string; password?: string } = {
+      name: editForm.name,
+      email: editForm.email,
+      role: editForm.role,
+    };
+    if (editForm.password) payload.password = editForm.password;
+    try {
+      await api.auth.updateUser(editingUser.id, payload);
+      setEditingUser(null);
+      loadUsers();
+      toast('Utilisateur modifié', 'success');
+    } catch (err: any) {
+      setEditError(err?.message || 'Erreur lors de la modification');
     }
   };
 
@@ -99,12 +128,18 @@ export function UsersPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {u.id !== currentUser.id && (
-                      <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" title="Supprimer"
-                        onClick={() => handleDelete(u.id, u.name)}>
-                        <span className="text-destructive text-xs">✕</span>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" title="Modifier"
+                        onClick={() => openEdit(u)}>
+                        <Pencil className="h-3 w-3" />
                       </Button>
-                    )}
+                      {u.id !== currentUser.id && (
+                        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" title="Supprimer"
+                          onClick={() => handleDelete(u.id, u.name)}>
+                          <span className="text-destructive text-xs">✕</span>
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -150,6 +185,56 @@ export function UsersPage() {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => { setShowForm(false); setFormError(''); }}>Annuler</Button>
             <Button type="submit">Créer</Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
+
+      <Dialog open={!!editingUser} onClose={() => setEditingUser(null)}>
+        <DialogHeader>
+          <DialogTitle>Modifier l'utilisateur</DialogTitle>
+        </DialogHeader>
+        {editError && (
+          <div className="mt-3 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {editError}
+          </div>
+        )}
+        <form onSubmit={handleSaveEdit} className="space-y-4 mt-4">
+          <div>
+            <label className="text-sm font-medium">Nom *</label>
+            <Input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} required className="mt-1" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Email *</label>
+            <Input type="email" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} required className="mt-1" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Mot de passe</label>
+            <Input
+              type="password"
+              value={editForm.password}
+              onChange={e => setEditForm({...editForm, password: e.target.value})}
+              placeholder="Laisser vide pour conserver le mot de passe actuel"
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Rôle</label>
+            <Select
+              value={editForm.role}
+              onChange={e => setEditForm({...editForm, role: e.target.value})}
+              disabled={editingUser?.id === currentUser.id}
+              className="mt-1"
+            >
+              <option value="demarcheur">Démarcheur</option>
+              <option value="admin">Admin</option>
+            </Select>
+            {editingUser?.id === currentUser.id && (
+              <p className="text-xs text-muted-foreground mt-1">Vous ne pouvez pas modifier votre propre rôle.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Annuler</Button>
+            <Button type="submit">Enregistrer</Button>
           </DialogFooter>
         </form>
       </Dialog>

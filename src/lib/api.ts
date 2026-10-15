@@ -101,6 +101,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    updateUser: (id: number, data: { name?: string; email?: string; role?: string; password?: string }) =>
+      request<any>(`/auth/users/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
     deleteUser: (id: number) => request<any>(`/auth/users/${id}`, { method: 'DELETE' }),
   },
 

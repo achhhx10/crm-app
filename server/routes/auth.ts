@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { db } from '../db/index.js';
 import { users } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 import { hashPassword, comparePassword } from '../utils/password.js';
 import { generateToken } from '../utils/jwt.js';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
@@ -120,6 +120,90 @@ router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: Au
     }
     res.json({ success: true });
   } catch (error) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/users/:id', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: 'Identifiant invalide' });
+      return;
+    }
+
+    const target = (await db.select().from(users).where(eq(users.id, id)))[0];
+    if (!target) {
+      res.status(404).json({ error: 'Utilisateur non trouvé' });
+      return;
+    }
+
+    const { name, email, role, password } = req.body ?? {};
+    const patch: Partial<typeof users.$inferInsert> = {};
+
+    if (name !== undefined) {
+      const trimmed = String(name).trim();
+      if (!trimmed) {
+        res.status(400).json({ error: 'Le nom ne peut pas être vide' });
+        return;
+      }
+      patch.name = trimmed;
+    }
+
+    if (email !== undefined) {
+      const normalized = String(email).trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+        res.status(400).json({ error: 'Email invalide' });
+        return;
+      }
+      const clash = (await db.select().from(users)
+        .where(and(eq(users.email, normalized), ne(users.id, id))))[0];
+      if (clash) {
+        res.status(400).json({ error: 'Cet email est déjà utilisé' });
+        return;
+      }
+      patch.email = normalized;
+    }
+
+    if (role !== undefined) {
+      if (!['admin', 'demarcheur'].includes(role)) {
+        res.status(400).json({ error: 'Rôle invalide' });
+        return;
+      }
+      // Locking yourself out of your own role would leave nobody able to manage users.
+      if (id === req.user!.userId && role !== target.role) {
+        res.status(400).json({ error: 'Vous ne pouvez pas modifier votre propre rôle' });
+        return;
+      }
+      if (target.role === 'admin' && role !== 'admin') {
+        const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, 'admin'));
+        if (admins.length <= 1) {
+          res.status(400).json({ error: 'Impossible : il doit rester au moins un administrateur' });
+          return;
+        }
+      }
+      patch.role = role;
+    }
+
+    if (password !== undefined && password !== '') {
+      if (typeof password !== 'string' || password.length < 8) {
+        res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères' });
+        return;
+      }
+      patch.password = await hashPassword(password);
+    }
+
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: 'Aucune modification fournie' });
+      return;
+    }
+
+    const [updated] = await db.update(users).set(patch).where(eq(users.id, id))
+      .returning({ id: users.id, name: users.name, email: users.email, role: users.role });
+
+    res.json(updated);
+  } catch (error) {
+    console.error('Update user error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
