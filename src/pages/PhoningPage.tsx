@@ -53,6 +53,18 @@ export function PhoningPage() {
   const [queue, setQueue] = useState<Contact[]>([]);
   const [total, setTotal] = useState(0);
   const [index, setIndex] = useState(0);
+  const queueScrollRef = useRef<HTMLDivElement>(null);
+
+  // The strip shows about eight of five hundred entries. Without this the current
+  // lead scrolls out of sight and the panel looks frozen while you work through
+  // the queue. 'nearest' scrolls the minimum needed, so it stays quiet when the
+  // row is already visible.
+  useEffect(() => {
+    const container = queueScrollRef.current;
+    if (!container) return;
+    const current = container.querySelector('[data-queue-current="true"]');
+    current?.scrollIntoView({ block: 'nearest' });
+  }, [index, queue.length]);
   const [done, setDone] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -571,13 +583,14 @@ export function PhoningPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="max-h-[70vh] overflow-y-auto">
+            <div ref={queueScrollRef} className="max-h-[70vh] overflow-y-auto">
               {queue.map((c, i) => {
                 const isCurrent = i === index;
                 const isDone = done.has(c.id);
                 return (
                   <button
                     key={c.id}
+                    data-queue-current={isCurrent ? 'true' : 'false'}
                     onClick={() => setIndex(i)}
                     className={`w-full text-left px-4 py-2 border-b border-border hover:bg-accent/50 transition-colors ${
                       isCurrent ? 'bg-primary/10 border-l-2 border-l-primary' : 'border-l-2 border-l-transparent'

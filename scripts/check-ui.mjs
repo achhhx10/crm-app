@@ -44,6 +44,21 @@ function walk(dir) {
   return out;
 }
 
+// 3. A custom class declared inside @layer components gains (0,2,0) under a
+// dark variant, because Tailwind emits .dark\:x:is(.dark *). That outranks every
+// plain utility at (0,1,0), so `position` there silently turned a sticky Card
+// into a relatively positioned one and its top offset started applying for real.
+const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+const layerBlock = css.match(/@layer\s+components\s*\{([\s\S]*?)\n\}/) || [null, ''];
+const positionSetters = [...layerBlock[1].matchAll(/\n\s*(\.[\w-]+)\s*\{[^}]*\bposition\s*:/g)].map(m => m[1]);
+if (positionSetters.length) {
+  for (const sel of positionSetters) {
+    fail(`${sel} déclare position dans @layer components : sous le variant dark cela atteint (0,2,0) et bat les utilitaires`);
+  }
+} else {
+  pass('aucune classe custom ne déclare position dans @layer components');
+}
+
 const offenders = walk(UI)
   .filter((f) => /\`[^\`]*\$\{className\}/.test(readFileSync(f, 'utf8')))
   .map((f) => f.replace(UI, ''));
