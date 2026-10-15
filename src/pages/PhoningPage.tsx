@@ -651,7 +651,7 @@ function FiltersBar({
       <CardContent className="flex flex-wrap items-center gap-2 py-3">
         <PhoneCall className="h-5 w-5 shrink-0 text-primary" aria-hidden />
         <Select
-          className="w-auto max-w-[13rem]"
+          className="w-auto min-w-[9rem] max-w-[17rem]"
           value={filters.reach}
           onChange={e => setFilters({ ...filters, reach: e.target.value })}
           aria-label="File"
@@ -660,7 +660,7 @@ function FiltersBar({
           <option value="false">Sans téléphone (à enrichir)</option>
         </Select>
         <Select
-          className="w-auto max-w-[13rem]"
+          className="w-auto min-w-[9rem] max-w-[17rem]"
           value={filters.hasSite}
           onChange={e => setFilters({ ...filters, hasSite: e.target.value })}
           aria-label="Site"
@@ -670,7 +670,7 @@ function FiltersBar({
           <option value="site_fonctionnel">Site fonctionnel</option>
         </Select>
         <Select
-          className="w-auto max-w-[13rem]"
+          className="w-auto min-w-[9rem] max-w-[17rem]"
           value={filters.stage}
           onChange={e => setFilters({ ...filters, stage: e.target.value })}
           aria-label="Stage"
@@ -679,7 +679,7 @@ function FiltersBar({
           {Object.entries(STAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </Select>
         <Select
-          className="w-auto max-w-[13rem]"
+          className="w-auto min-w-[9rem] max-w-[17rem]"
           value={filters.language}
           onChange={e => setFilters({ ...filters, language: e.target.value })}
           aria-label="Langue"

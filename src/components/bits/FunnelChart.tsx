@@ -44,7 +44,12 @@ export function FunnelChart({ steps, note }: FunnelChartProps) {
                 <ChevronDown className="h-3 w-3" aria-hidden />
                 {step.conversionFromPrevious !== null ? (
                   <span className="tabular-nums">
-                    {step.conversionFromPrevious}% des {steps[index - 1].label.toLowerCase()}
+                    {/* 4 contacted out of 39254 is 0.01%: rounding it to "0 %"
+                        reads as "nobody", so anything under 1 % is shown as such. */}
+                    {step.conversionFromPrevious > 0 && step.conversionFromPrevious < 1
+                      ? '<1 %'
+                      : `${step.conversionFromPrevious} %`}{' '}
+                    des {steps[index - 1].label.toLowerCase()}
                   </span>
                 ) : (
                   <span>—</span>

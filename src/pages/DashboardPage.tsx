@@ -17,7 +17,7 @@ import { FunnelChart, FunnelStep } from '../components/bits/FunnelChart';
 import { CountUp } from '../components/bits/CountUp';
 import { TWEPerformanceChart } from '../components/bits/TWEPerformanceChart';
 import { useToast } from '../components/ui/toast';
-import { formatCurrency, formatDate, CALL_RESULTS, OBJECTIONS } from '../lib/utils';
+import { formatCurrency, formatDate, formatSource, CALL_RESULTS, OBJECTIONS } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import type { PerformanceData, ActivityItem, ObjectionBreakdown, PipelineData, FunnelStage } from '../types';
 
@@ -31,16 +31,6 @@ import type { PerformanceData, ActivityItem, ObjectionBreakdown, PipelineData, F
  * inbound requests and ROI are absent on purpose: nothing here records traffic
  * or spend, so showing them would mean showing zeros.
  */
-
-const SOURCE_LABELS: Record<string, string> = {
-  google_maps: 'Google Maps',
-  internet: 'Internet',
-  bouche_a_oreille: 'Bouche-à-oreille',
-  linkedin: 'LinkedIn',
-  appel: 'Appel',
-  autre: 'Autre',
-  inconnu: 'Non renseigné',
-};
 
 function VitalCard({
   icon: Icon,
@@ -318,7 +308,7 @@ export function DashboardPage() {
                     {sources.map(row => (
                       <tr key={row.source} className="border-b last:border-0">
                         <td className="px-4 py-3 font-medium">
-                          {SOURCE_LABELS[row.source] || row.source}
+                          {formatSource(row.source)}
                         </td>
                         <td className="px-4 py-3">
                           <MicroBar value={row.prospects} max={maxProspects} tone="muted" showLabel />

@@ -48,10 +48,40 @@ export function formatDateTime(value: DateLike): string {
 }
 
 export function formatDuration(seconds: number | null): string {
-  if (!seconds) return '-';
+  // 0 is a real measurement, not a missing value: the call timer showed a
+  // dash for a fresh lead instead of an elapsed time.
+  if (seconds === null || seconds === undefined) return '-';
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}min ${secs}s`;
+}
+
+/**
+ * Lead origin as a label. Imports wrote raw batch identifiers such as
+ * "scrape_neuchatel_20261008", which leaked an internal filename into a table
+ * meant for reading.
+ */
+const SOURCE_LABELS: Record<string, string> = {
+  google_maps: 'Google Maps',
+  internet: 'Internet',
+  bouche_a_oreille: 'Bouche-à-oreille',
+  linkedin: 'LinkedIn',
+  appel: 'Appel',
+  autre: 'Autre',
+  demo: 'Démo',
+};
+
+export function formatSource(source: string | null | undefined): string {
+  if (!source) return 'Non renseigné';
+  const known = SOURCE_LABELS[source];
+  if (known) return known;
+  // "scrape_neuchatel_20261008" -> "Scrape neuchatel"
+  const cleaned = source
+    .replace(/_\d{6,8}$/, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  if (!cleaned) return source;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 export function formatCurrency(amount: number | null): string {
