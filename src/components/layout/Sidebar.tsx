@@ -1,13 +1,17 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { GitBranch, Upload, Shield, LogOut, DollarSign, LayoutDashboard, Users, Phone, PhoneCall, Gift } from 'lucide-react';
+import { GitBranch, Upload, Shield, LogOut, DollarSign, LayoutDashboard, Users, Phone, PhoneCall, Gift, BellRing } from 'lucide-react';
 import { DarkModeToggle } from '../ui/dark-mode-toggle';
+import { api } from '../../lib/api';
 
 const mainNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Tableau de bord', end: true },
   { to: '/pipeline', icon: GitBranch, label: 'Pipeline' },
   { to: '/contacts', icon: Users, label: 'Prospects' },
   { to: '/phoning', icon: PhoneCall, label: 'Phoning' },
+  // Badge shows how many scheduled callbacks are due, so a follow-up written
+  // on the calling screen is not silently forgotten until the next morning.
+  { to: '/followups', icon: BellRing, label: 'À relancer' },
   { to: '/deals', icon: DollarSign, label: 'Deals' },
   { to: '/calls', icon: Phone, label: 'Appels' },
   { to: '/referrals', icon: Gift, label: 'Recommandations' },
@@ -28,6 +32,25 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
   const isAdmin = user.role === 'admin';
 
+  const [dueCount, setDueCount] = useState(0);
+
+  const loadDueCount = useCallback(() => {
+    api.calls.dueCount()
+      .then(res => setDueCount(res?.total ?? 0))
+      .catch(() => setDueCount(0));
+  }, []);
+
+  useEffect(() => {
+    loadDueCount();
+    const timer = setInterval(loadDueCount, 60_000);
+    // Re-check when the tab regains focus: logging a call changes the count.
+    window.addEventListener('focus', loadDueCount);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', loadDueCount);
+    };
+  }, [loadDueCount]);
+
   const handleLogout = () => {
     localStorage.removeItem('crm_token');
     localStorage.removeItem('crm_user');
@@ -38,7 +61,9 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     if (onClose) onClose();
   };
 
-  const renderLink = (item: { to: string; icon: React.ComponentType<{ className?: string }>; label: string; end?: boolean }) => (
+  const renderLink = (item: { to: string; icon: React.ComponentType<{ className?: string }>; label: string; end?: boolean }) => {
+    const badge = item.to === '/followups' && dueCount > 0 ? dueCount : null;
+    return (
     <NavLink
       key={item.to}
       to={item.to}
@@ -59,10 +84,19 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           )}
           <item.icon className="h-4 w-4 shrink-0" />
           <span className="truncate">{item.label}</span>
+          {badge !== null && (
+            <span
+              className="ml-auto rounded-full bg-destructive px-2 py-0.5 text-xs font-semibold text-destructive-foreground tabular-nums"
+              aria-label={`${badge} relance(s) à faire`}
+            >
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
         </>
       )}
     </NavLink>
-  );
+    );
+  };
 
   return (
     <>

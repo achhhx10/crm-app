@@ -29,6 +29,10 @@ export interface Contact {
   /** 1 when the business asked not to be called again. */
   dnc?: number | null;
   dncReason?: string | null;
+  /** Calling history for the viewer: last call date, its result, and how many. */
+  lastCallAt?: string | number | Date | null;
+  lastCallResult?: string | null;
+  callCount?: number;
   notes: string | null;
   /** 'de' | 'fr' | 'it' | 'en' | null. Detected, not declared by the business. */
   language?: string | null;
@@ -148,4 +152,17 @@ export interface ActivityItem {
   notes: string | null;
   userName: string | null;
   contactName: string | null;
+}
+
+/** A lead whose scheduled callback is due or overdue. */
+export interface DueFollowUp {
+  id: number;
+  contactId: number;
+  callDate: string | number | Date | null;
+  nextStep: string | null;
+  nextStepAt: string | number | Date;
+  businessName: string | null;
+  city: string | null;
+  phone: string | null;
+  overdue: boolean;
 }

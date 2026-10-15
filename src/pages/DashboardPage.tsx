@@ -3,11 +3,12 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'motion/react';
 import { api } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
+import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
 import { SpotlightCard } from '../components/bits/SpotlightCard';
 import { CountUp } from '../components/bits/CountUp';
 import { TWEPerformanceChart } from '../components/bits/TWEPerformanceChart';
-import { Phone, Target, TrendingUp, DollarSign, Gift, AlertTriangle, Trophy } from 'lucide-react';
+import { Phone, Target, TrendingUp, DollarSign, Gift, AlertTriangle, Trophy, BellRing } from 'lucide-react';
 import { formatDate, STAGES, CALL_RESULTS, OBJECTIONS } from '../lib/utils';
 import { DateRangePicker, rangeForPreset } from '../components/ui/date-range';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -59,6 +60,7 @@ export function DashboardPage() {
   const [performance, setPerformance] = useState<PerformanceData[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [objections, setObjections] = useState<ObjectionBreakdown | null>(null);
+  const [dueCount, setDueCount] = useState<{ total: number; overdue: number }>({ total: 0, overdue: 0 });
   const [loading, setLoading] = useState(true);
   const reduce = useReducedMotion();
 
@@ -89,12 +91,13 @@ export function DashboardPage() {
       if (range.to) params.to = range.to;
     }
     try {
-      const [s, p, perf, act, obj] = await Promise.all([
+      const [s, p, perf, act, obj, due] = await Promise.all([
         api.dashboard.summary(params),
         api.dashboard.pipeline(),
         api.dashboard.performance(params),
         api.dashboard.activity(params),
         api.dashboard.objections(params),
+        api.calls.dueCount(),
       ]);
       setSummary(s);
       setPipelineData(p.pipeline);
@@ -103,6 +106,7 @@ export function DashboardPage() {
       setPerformance(perf.performance || []);
       setActivity(act.activity || []);
       setObjections(obj);
+      setDueCount(due || { total: 0, overdue: 0 });
     } catch (err) {
       console.error('Dashboard load error:', err);
     } finally {
@@ -230,6 +234,30 @@ export function DashboardPage() {
           </Card>
         </motion.div>
       </div>
+
+      {dueCount.total > 0 && (
+        <motion.div variants={item}>
+          <Link
+            to="/followups"
+            className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/50"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-destructive/10">
+              <BellRing className="h-5 w-5 text-destructive" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">
+                {dueCount.total} relance{dueCount.total > 1 ? 's' : ''} à faire
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {dueCount.overdue > 0
+                  ? `dont ${dueCount.overdue} en retard`
+                  : 'aucune en retard'}
+              </p>
+            </div>
+            <Button variant="outline" size="sm">Ouvrir</Button>
+          </Link>
+        </motion.div>
+      )}
 
       {/* Funnel + objections */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

@@ -26,9 +26,11 @@ interface Filters {
   stage: string;
   hasSite: string;
   language: string;
+  /** Default false: the queue is the cold list. True brings back worked leads. */
+  includeCalled: boolean;
 }
 
-const DEFAULT_FILTERS: Filters = { reach: 'true', stage: '', hasSite: '', language: '' };
+const DEFAULT_FILTERS: Filters = { reach: 'true', stage: '', hasSite: '', language: '', includeCalled: false };
 
 /** Google search with the company name prefilled; city disambiguates homonyms. */
 function buildSearchUrl(c: Contact): string {
@@ -89,7 +91,9 @@ export function PhoningPage() {
 
   const buildParams = useCallback((f: Filters, page: number): Record<string, string> => {
     const params: Record<string, string> = {
-      excludeCalled: 'true',
+      // The queue is "leads I have not called yet". With the switch on, that
+      // restriction lifts and the companies already worked come back.
+      ...(f.includeCalled ? {} : { excludeCalled: 'true' }),
       sortBy: 'opportunity',
       sortDir: 'desc',
       limit: String(PAGE_SIZE),
@@ -679,6 +683,15 @@ function FiltersBar({
           {Object.entries(LANGUAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           <option value="__empty__">Indéterminée</option>
         </Select>
+        <label className="flex min-h-[40px] items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={filters.includeCalled}
+            onChange={e => setFilters({ ...filters, includeCalled: e.target.checked })}
+            className="h-4 w-4 rounded border-input"
+          />
+          Inclure les prospects déjà appelés
+        </label>
         <span className="text-sm text-muted-foreground ml-auto">
           {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {queueSummary(total, remaining, loaded)}

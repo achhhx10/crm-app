@@ -60,6 +60,8 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
         nextStepAt: calls.nextStepAt,
         // Joined so the UI can label each row instead of showing "Sans contact".
         businessName: contacts.businessName,
+        contactCity: contacts.city,
+        contactPhone: contacts.phone,
       })
       .from(calls)
       .leftJoin(contacts, eq(calls.contactId, contacts.id))
@@ -142,6 +144,91 @@ router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => 
       connectionRate: totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0,
     });
   } catch (error) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+/**
+ * Leads awaiting a callback.
+ *
+ * A scheduled follow-up stops being due as soon as the rep called the lead
+ * again: the newest call for a contact is the only one that counts, otherwise a
+ * follow-up set three weeks ago keeps resurfacing after every new conversation.
+ */
+
+
+router.get('/due', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const rows = await db.execute(sql`
+      WITH last_call AS (
+        SELECT DISTINCT ON (c.contact_id)
+          c.id, c.contact_id, c.date, c.next_step, c.next_step_at
+        FROM calls c
+        WHERE c.contact_id IS NOT NULL
+          AND c.next_step_at IS NOT NULL
+          AND c.next_step_at <= NOW()
+          ${isAdmin(req) ? sql`` : sql`AND c.user_id = ${userId}`}
+        ORDER BY c.contact_id, c.date DESC
+      )
+      SELECT
+        last_call.id,
+        last_call.contact_id   AS "contactId",
+        last_call.date          AS "callDate",
+        last_call.next_step     AS "nextStep",
+        last_call.next_step_at  AS "nextStepAt",
+        contacts.business_name  AS "businessName",
+        contacts.city           AS "city",
+        contacts.phone          AS "phone"
+      FROM last_call
+      LEFT JOIN contacts ON contacts.id = last_call.contact_id
+      ORDER BY last_call.next_step_at ASC
+      LIMIT 200
+    `);
+
+    const now = Date.now();
+    const items = (rows.rows as any[]).map(r => ({
+      id: r.id,
+      contactId: r.contactId,
+      callDate: r.callDate,
+      nextStep: r.nextStep,
+      nextStepAt: r.nextStepAt,
+      businessName: r.businessName,
+      city: r.city,
+      phone: r.phone,
+      overdue: new Date(r.nextStepAt).getTime() < now,
+    }));
+
+    res.json({ due: items.length, overdue: items.filter(i => i.overdue).length, items });
+  } catch (error) {
+    console.error('Due follow-ups error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+/** Badge counter for the sidebar: how many callbacks are waiting. */
+router.get('/due-count', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const row = await db.execute(sql`
+      WITH last_call AS (
+        SELECT DISTINCT ON (c.contact_id) c.next_step_at
+        FROM calls c
+        WHERE c.contact_id IS NOT NULL
+          AND c.next_step_at IS NOT NULL
+          AND c.next_step_at <= NOW()
+          ${isAdmin(req) ? sql`` : sql`AND c.user_id = ${userId}`}
+        ORDER BY c.contact_id, c.date DESC
+      )
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE next_step_at < NOW() - INTERVAL '1 day')::int AS overdue
+      FROM last_call
+    `);
+    const r = (row.rows as any[])[0] || {};
+    res.json({ total: Number(r.total || 0), overdue: Number(r.overdue || 0) });
+  } catch (error) {
+    console.error('Due follow-up count error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

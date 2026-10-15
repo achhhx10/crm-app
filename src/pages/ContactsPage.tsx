@@ -35,6 +35,7 @@ const defaultColWidths: Record<string, number> = {
   opportunity: 110,
   stage: 130,
   site: 120,
+  lastCall: 160,
   actions: 120,
 };
 
@@ -153,6 +154,7 @@ export function ContactsPage() {
   const minReviews = urlStr('minReviews', '');
   const activePreset = searchParams.get('preset');
   const dncFilterUrl = urlStr('dnc', 'exclude');
+  const calledFilter = urlStr('called', 'all');
   const assigneeFilterUrl = urlStr('assignedTo', 'all');
 
   // Any filter change resets to page 1; a page change keeps the filters.
@@ -174,6 +176,7 @@ export function ContactsPage() {
   const setMinReviews = setFilter('minReviews');
   const setActivePreset = setFilter('preset');
   const setDncFilter = setFilter('dnc');
+  const setCalledFilter = setFilter('called');
   const setAssigneeFilter = setFilter('assignedTo');
   const [activities, setActivities] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
@@ -213,7 +216,7 @@ export function ContactsPage() {
 
   useEffect(() => {
     loadContacts();
-  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, dncFilter, assigneeFilter, sortField, sortDir]);
+  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, dncFilter, calledFilter, assigneeFilter, sortField, sortDir]);
 
   useEffect(() => {
     api.contacts.activities().then(setActivities).catch(() => {});
@@ -246,6 +249,8 @@ export function ContactsPage() {
       if (cityFilter !== 'all') params.city = cityFilter;
       if (languageFilter !== 'all') params.language = languageFilter;
       params.dnc = dncFilter;
+      if (calledFilter === 'never') params.excludeCalled = 'true';
+      else if (calledFilter === 'already') params.called = 'only';
       if (assigneeFilter !== 'all') params.assignedTo = assigneeFilter;
       if (reachFilter !== 'all') params.reach = reachFilter;
       if (hasReviewsFilter !== 'all') params.hasReviews = hasReviewsFilter;
@@ -381,6 +386,8 @@ export function ContactsPage() {
     if (cityFilter !== 'all') params.city = cityFilter;
     if (languageFilter !== 'all') params.language = languageFilter;
     params.dnc = dncFilter;
+    if (calledFilter === 'never') params.excludeCalled = 'true';
+    else if (calledFilter === 'already') params.called = 'only';
     if (assigneeFilter !== 'all') params.assignedTo = assigneeFilter;
     if (reachFilter !== 'all') params.reach = reachFilter;
     if (hasReviewsFilter !== 'all') params.hasReviews = hasReviewsFilter;
@@ -541,6 +548,12 @@ export function ContactsPage() {
             {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
           </Select>
         ) : null}
+        <Select value={calledFilter} onChange={(e) => { setActivePreset(null); setCalledFilter(e.target.value); setPage(1); }}
+          aria-label="Filtrer par historique d'appel">
+          <option value="all">Tous les prospects</option>
+          <option value="never">Jamais appelés</option>
+          <option value="already">Déjà appelés</option>
+        </Select>
         <Select value={dncFilter} onChange={(e) => { setActivePreset(null); setDncFilter(e.target.value); setPage(1); }}
           aria-label="Filtrer les prospects ayant refusé un appel">
           <option value="exclude">Appelables uniquement</option>
@@ -652,6 +665,7 @@ export function ContactsPage() {
                 <ResizableTh label="Opportunité" field="opportunity" widths={widths} onResize={handleColResize} sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <ResizableTh label="Stage" field="stage" widths={widths} onResize={handleColResize} sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <ResizableTh label="Site" field="hasSite" widths={widths} onResize={handleColResize} sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <ResizableTh label="Dernier appel" field="lastCall" widths={widths} onResize={handleColResize} sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <th className="h-10 px-2 text-right font-medium text-muted-foreground" style={{ width: widths.actions }}>Actions</th>
               </tr>
             </thead>
@@ -704,6 +718,19 @@ export function ContactsPage() {
                       {contact.hasSite === 'site_fonctionnel' && <span className="flex items-center gap-1 text-xs text-success"><Globe className="h-3 w-3" /> Site OK</span>}
                       {!contact.hasSite && '-'}
                     </td>
+                    <td className="px-3 py-2" style={{ width: widths.lastCall }}>
+                      {contact.lastCallAt ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs font-medium">{formatDate(contact.lastCallAt)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {CALL_RESULTS[contact.lastCallResult || ''] || contact.lastCallResult || '-'}
+                            {contact.callCount ? ` · ${contact.callCount}×` : ''}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Jamais appelé</span>
+                      )}
+                    </td>
                     <td className="px-2 py-2">
                       <div className="flex justify-end gap-0.5">
                         {contact.phone && (
@@ -738,7 +765,7 @@ export function ContactsPage() {
               })}
               {visibleContacts.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="text-center py-8 text-muted-foreground">Aucun prospect trouvé</td>
+                  <td colSpan={12} className="text-center py-8 text-muted-foreground">Aucun prospect trouvé</td>
                 </tr>
               )}
             </tbody>

@@ -72,6 +72,35 @@ function searchCondition(search: string) {
   return sql`(${sql.join(textMatches.map(m => sql`(${m})`), sql` OR `)})`;
 }
 
+/**
+ * Last call per contact for one page of results, scoped to the viewer for
+ * non-admins. Returns a map keyed by contact id.
+ */
+async function loadCallInfo(ids: number[], userId: number | null): Promise<Record<number, { lastCallAt: any; lastCallResult: string; callCount: number }>> {
+  if (ids.length === 0) return {};
+  const rows = await db.execute(sql`
+    SELECT DISTINCT ON (contact_id)
+      contact_id,
+      date AS "lastCallAt",
+      result AS "lastCallResult",
+      COUNT(*) OVER (PARTITION BY contact_id) AS "callCount"
+    FROM calls
+    WHERE contact_id = ANY(${ids})
+      ${userId === null ? sql`` : sql`AND user_id = ${userId}`}
+    ORDER BY contact_id, date DESC
+  `);
+
+  const out: Record<number, { lastCallAt: any; lastCallResult: string; callCount: number }> = {};
+  for (const row of rows.rows as any[]) {
+    out[Number(row.contact_id)] = {
+      lastCallAt: row.lastCallAt,
+      lastCallResult: row.lastCallResult,
+      callCount: Number(row.callCount),
+    };
+  }
+  return out;
+}
+
 const router = Router();
 
 function isAdmin(req: AuthRequest): boolean {
@@ -98,7 +127,7 @@ function pickAllowedFields(body: any, fields: string[]) {
 
 router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, language, dnc, sortBy, sortDir } = req.query;
+    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, called, language, dnc, sortBy, sortDir } = req.query;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 50));
     const offset = (page - 1) * limit;
@@ -176,8 +205,20 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       conditions.push(sql`coalesce(${contacts.dnc}, 0) = 0`);
     }
 
-    // Phoning queue: hide leads already called (by anyone for admins, by the caller otherwise).
+    // Calling history filter. The phoning queue wants leads never called before
+    // (excludeCalled), but a rep also needs the reverse: the companies they
+    // already worked, which is what they were unable to find before.
     if (excludeCalled === 'true') {
+      const sub = isAdmin(req)
+        ? sql`SELECT 1 FROM calls WHERE calls.contact_id = ${contacts.id}`
+        : sql`SELECT 1 FROM calls WHERE calls.contact_id = ${contacts.id} AND calls.user_id = ${req.user!.userId}`;
+      conditions.push(sql`NOT EXISTS (${sub})`);
+    } else if (called === 'only') {
+      const sub = isAdmin(req)
+        ? sql`SELECT 1 FROM calls WHERE calls.contact_id = ${contacts.id}`
+        : sql`SELECT 1 FROM calls WHERE calls.contact_id = ${contacts.id} AND calls.user_id = ${req.user!.userId}`;
+      conditions.push(sql`EXISTS (${sub})`);
+    } else if (called === 'never') {
       const sub = isAdmin(req)
         ? sql`SELECT 1 FROM calls WHERE calls.contact_id = ${contacts.id}`
         : sql`SELECT 1 FROM calls WHERE calls.contact_id = ${contacts.id} AND calls.user_id = ${req.user!.userId}`;
@@ -204,6 +245,9 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       googleRating: contacts.googleRating,
       googleReviews: contacts.googleReviews,
       created_at: contacts.createdAt,
+      // Sort key for the "Dernier appel" column. Without it the header would
+      // silently fall back to created_at and the arrow would lie.
+      lastCall: sql`(SELECT MAX(c.date) FROM calls c WHERE c.contact_id = ${contacts.id})`,
     };
 
     // 'non' is the legacy value for "no site" (see hasSite handling above): count it
@@ -226,7 +270,21 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     const allContacts = await orderedQuery.limit(limit).offset(offset);
     const total = (await countQuery)[0]?.value ?? 0;
 
-    res.json({ contacts: allContacts, total, page, limit });
+    // Calling history for the rows on this page only, fetched separately so the
+    // contact projection above can never lose a column. DISTINCT ON picks the
+    // most recent call per contact while the window function counts them all.
+    const callInfo = await loadCallInfo(
+      allContacts.map((c: any) => c.id),
+      isAdmin(req) ? null : req.user!.userId,
+    );
+    const withCalls = allContacts.map((c: any) => ({
+      ...c,
+      lastCallAt: callInfo[c.id]?.lastCallAt ?? null,
+      lastCallResult: callInfo[c.id]?.lastCallResult ?? null,
+      callCount: callInfo[c.id]?.callCount ?? 0,
+    }));
+
+    res.json({ contacts: withCalls, total, page, limit });
   } catch (error) {
     console.error('Get contacts error:', error);
     res.status(500).json({ error: 'Erreur serveur' });

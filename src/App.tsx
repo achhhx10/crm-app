@@ -11,6 +11,7 @@ const ContactsPage = React.lazy(() => import('./pages/ContactsPage').then(m => (
 const PhoningPage = React.lazy(() => import('./pages/PhoningPage').then(m => ({ default: m.PhoningPage })));
 const ContactDetailPage = React.lazy(() => import('./pages/ContactDetailPage').then(m => ({ default: m.ContactDetailPage })));
 const CallsPage = React.lazy(() => import('./pages/CallsPage').then(m => ({ default: m.CallsPage })));
+const FollowUpsPage = React.lazy(() => import('./pages/FollowUpsPage').then(m => ({ default: m.FollowUpsPage })));
 const DealsPage = React.lazy(() => import('./pages/DealsPage').then(m => ({ default: m.DealsPage })));
 const ReferralsPage = React.lazy(() => import('./pages/ReferralsPage').then(m => ({ default: m.ReferralsPage })));
 const ImportPage = React.lazy(() => import('./pages/ImportPage').then(m => ({ default: m.ImportPage })));
@@ -107,6 +108,16 @@ export default function App() {
                 <PrivateRoute>
                   <Suspense fallback={loadingFallback}>
                     <CallsPage />
+                  </Suspense>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/followups"
+              element={
+                <PrivateRoute>
+                  <Suspense fallback={loadingFallback}>
+                    <FollowUpsPage />
                   </Suspense>
                 </PrivateRoute>
               }

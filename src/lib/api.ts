@@ -141,6 +141,8 @@ export const api = {
       return request<{ calls: any[]; total: number }>(`/calls${query}`);
     },
     byContact: (contactId: number) => request<any[]>(`/calls/contact/${contactId}`),
+    due: () => request<{ due: number; overdue: number; items: any[] }>('/calls/due'),
+    dueCount: () => request<{ total: number; overdue: number }>('/calls/due-count'),
     stats: (params?: Record<string, string>) => {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
       return request<any>(`/calls/stats${q}`);
