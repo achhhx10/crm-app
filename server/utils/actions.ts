@@ -68,7 +68,10 @@ export async function dueActions(req: AuthRequest): Promise<ActionItem[]> {
     WHERE ${scope}
     ORDER BY last_call.next_step_at ASC
     LIMIT 20
-  `).catch(() => ({ rows: [] as any[] }));
+  `).catch((err) => {
+    console.error('actions: relances dues indisponibles:', err.message);
+    return { rows: [] as any[] };
+  });
 
   // 2. Quotes sent and never answered.
   const quoteCutoff = daysAgo(STALE_QUOTE_AFTER_DAYS);
@@ -86,7 +89,10 @@ export async function dueActions(req: AuthRequest): Promise<ActionItem[]> {
       ${scope}
     ORDER BY ${deals.createdAt} ASC
     LIMIT 20
-  `).catch(() => ({ rows: [] as any[] }));
+  `).catch((err) => {
+    console.error('actions: devis sans réponse indisponibles:', err.message);
+    return { rows: [] as any[] };
+  });
 
   // 3. Reachable leads without a site that nobody has dialled lately.
   const callCutoff = daysAgo(HOT_PHONE_AFTER_DAYS);
@@ -108,7 +114,10 @@ export async function dueActions(req: AuthRequest): Promise<ActionItem[]> {
       ${scope}
     ORDER BY ${contacts.googleRating} DESC NULLS LAST
     LIMIT 20
-  `).catch(() => ({ rows: [] as any[] }));
+  `).catch((err) => {
+    console.error('actions: prêts à appeler indisponibles:', err.message);
+    return { rows: [] as any[] };
+  });
 
   const items: ActionItem[] = [];
 
