@@ -11,3 +11,5 @@ backups/
 *.log
 .DS_Store
 .demo-seed.json
+.shots/
+shot.mjs

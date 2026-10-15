@@ -71,14 +71,17 @@ export function ActionsPanel({ items, thresholds }: ActionsPanelProps) {
 
       <div className="grid grid-cols-1 gap-px border-t border-border bg-border md:grid-cols-3">
         {GROUPS.map(group => {
-          const groupItems = items.filter(i => i.kind === group.kind).slice(0, 5);
+          const all = items.filter(i => i.kind === group.kind);
+          // The badge counts what the query found; the list is only the first
+          // few, and says so, so the two never disagree.
+          const groupItems = all.slice(0, 5);
           const Icon = group.icon;
           return (
             <div key={group.kind} className="bg-card p-4">
               <div className="mb-3 flex items-center gap-2">
                 <Icon className={`h-4 w-4 shrink-0 ${group.tone}`} />
                 <span className="text-sm font-medium">{group.title}</span>
-                <Badge variant="secondary" className="ml-auto">{groupItems.length}</Badge>
+                <Badge variant="secondary" className="ml-auto">{all.length}</Badge>
               </div>
 
               {groupItems.length === 0 ? (
@@ -109,6 +112,12 @@ export function ActionsPanel({ items, thresholds }: ActionsPanelProps) {
                     </li>
                   ))}
                 </ul>
+              )}
+
+              {all.length > groupItems.length && (
+                <p className="mt-2 px-2 text-xs text-muted-foreground">
+                  + {all.length - groupItems.length} autre{all.length - groupItems.length > 1 ? 's' : ''}
+                </p>
               )}
             </div>
           );
