@@ -23,6 +23,7 @@ import { CALL_RESULTS, OBJECTIONS, SITE_STATUSES, STAGES } from '../src/lib/util
 // Single source of truth, shared with the HTTP seed endpoint.
 import { CONTACTS, CALLS, DEALS } from '../server/demo/seedData.ts';
 import { validateVocabulary } from './seed-demo.mjs';
+import { followUpsQuery, staleQuotesQuery, coldHotQuery } from '../server/utils/actionQueries.ts';
 
 // Deal statuses live inside DealsPage rather than lib/utils; kept inline here
 // rather than refactoring the page inside a data check.
@@ -108,40 +109,10 @@ const QUERIES = {
     SELECT id, amount, EXTRACT(EPOCH FROM (NOW() - ${deals.createdAt})) / 86400 AS age
     FROM ${deals} WHERE ${deals.status} = ${IN_PROGRESS} ORDER BY ${deals.createdAt} ASC LIMIT 200
   `),
-  // Actions du jour — les trois listes.
-  'actions: relances dues': () => raw(sql`
-    WITH last_call AS (
-      SELECT DISTINCT ON (c.contact_id) c.contact_id, c.next_step, c.next_step_at
-      FROM calls c
-      WHERE c.contact_id IS NOT NULL AND c.next_step_at IS NOT NULL AND c.next_step_at <= NOW()
-      ORDER BY c.contact_id, c.date DESC
-    )
-    SELECT last_call.contact_id AS "contactId", last_call.next_step AS "nextStep",
-           ${contacts.businessName} AS "businessName", ${contacts.city}, ${contacts.phone},
-           EXTRACT(EPOCH FROM (NOW() - last_call.next_step_at)) / 86400 AS age
-    FROM last_call LEFT JOIN ${contacts} ON ${contacts.id} = last_call.contact_id
-    ORDER BY last_call.next_step_at ASC LIMIT 20
-  `),
-  'actions: devis sans reponse': () => raw(sql`
-    SELECT ${deals.id} AS dealId, ${deals.contactId} AS "contactId", ${deals.amount} AS amount,
-           ${contacts.businessName} AS "businessName", ${contacts.city}, ${contacts.phone},
-           EXTRACT(EPOCH FROM (NOW() - ${deals.createdAt})) / 86400 AS age
-    FROM ${deals} LEFT JOIN ${contacts} ON ${contacts.id} = ${deals.contactId}
-    WHERE ${deals.status} = ${IN_PROGRESS} AND ${deals.createdAt} <= ${new Date('2026-10-05')}
-    ORDER BY ${deals.createdAt} ASC LIMIT 20
-  `),
-  'actions: chauds sans appel': () => raw(sql`
-    SELECT ${contacts.id} AS "contactId", ${contacts.businessName} AS "businessName",
-           ${contacts.city}, ${contacts.phone}, ${contacts.googleRating} AS rating,
-           EXTRACT(EPOCH FROM (NOW() - ${contacts.createdAt})) / 86400 AS age
-    FROM ${contacts}
-    WHERE ${contacts.hasSite} IN ('pas_de_site', 'non')
-      AND ${contacts.phone} IS NOT NULL AND ${contacts.phone} != ''
-      AND coalesce(${contacts.dnc}, 0) = 0
-      AND ${contacts.stage} IN ('identifie', 'contacte')
-      AND NOT EXISTS (SELECT 1 FROM ${calls} cl WHERE cl.contact_id = ${contacts.id} AND cl.date >= ${new Date('2026-10-01')})
-    ORDER BY ${contacts.googleRating} DESC NULLS LAST LIMIT 20
-  `),
+  // Actions du jour : les VRAIES requêtes, pas une reconstruction.
+  'actions: relances dues': () => raw(followUpsQuery(1, true)),
+  'actions: devis sans reponse': () => raw(staleQuotesQuery(1, true)),
+  'actions: chauds sans appel': () => raw(coldHotQuery(1, true)),
   'sources: agrégat deals': () => db.select({
     source: contacts.source,
     quotes: count(),
@@ -164,6 +135,22 @@ for (const [label, build] of Object.entries(QUERIES)) {
     // A WITH ... SELECT is a SELECT.
     else if (!/^\s*(select|with)\b/i.test(text)) problems.push('ne commence pas par SELECT ni WITH');
     if (/\bundefined\b/.test(text)) problems.push('contient "undefined"');
+
+    // "WHERE ... 1=1" is a syntax error: an interpolated ownership scope must be
+    // introduced by AND, or be the whole predicate. This exact bug shipped once
+    // and the checker waved it through because it validated a copy of the query.
+    const flat = text.replace(/\s+/g, ' ');
+    let idx = flat.indexOf('1=1');
+    while (idx !== -1) {
+      const before = flat.slice(0, idx);
+      // Valid predecessors: AND, WHERE, or the opening paren of an and(...)
+      // chain, which drizzle renders as "where (1=1 and ...)".
+      if (!/(AND|WHERE|\()\s*$/i.test(before)) {
+        problems.push('1=1 non precede par AND ni WHERE');
+        break;
+      }
+      idx = flat.indexOf('1=1', idx + 3);
+    }
     if (/\$\{\s*\}/.test(text)) problems.push('contient un gabarit non résolu');
     if (!text.includes('"')) problems.push('aucun identifiant quoté');
 
