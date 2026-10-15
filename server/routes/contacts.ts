@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { contacts } from '../db/schema.js';
+import { contacts, users } from '../db/schema.js';
 import { eq, desc, asc, sql, and, count, or, isNull, inArray } from 'drizzle-orm';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -118,8 +118,18 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     if (stage && typeof stage === 'string' && stage !== 'all') {
       conditions.push(eq(contacts.stage, stage));
     }
-    if (assignedTo && typeof assignedTo === 'string') {
-      conditions.push(eq(contacts.assignedTo, Number(assignedTo)));
+    // 'me' | 'unassigned' | 'all' | a user id.
+    if (assignedTo && typeof assignedTo === 'string' && assignedTo !== 'all') {
+      if (assignedTo === 'me') {
+        conditions.push(or(eq(contacts.assignedTo, req.user!.userId), isNull(contacts.assignedTo)));
+      } else if (assignedTo === 'unassigned') {
+        conditions.push(isNull(contacts.assignedTo));
+      } else {
+        const ownerId = Number(assignedTo);
+        if (Number.isInteger(ownerId) && ownerId > 0) {
+          conditions.push(eq(contacts.assignedTo, ownerId));
+        }
+      }
     }
     if (activity && typeof activity === 'string' && activity !== 'all') {
       conditions.push(eq(contacts.activity, activity));
@@ -437,6 +447,43 @@ router.put('/bulk-stage', authMiddleware, async (req: AuthRequest, res: Response
     res.json({ success: true, updated: targetIds.length });
   } catch (error) {
     console.error('Bulk stage error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.put('/bulk-assign', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { ids, assignedTo } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: 'ids (array) requis' });
+      return;
+    }
+    const numericIds = [...new Set(ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0))];
+    if (numericIds.length === 0) {
+      res.status(400).json({ error: 'ids invalides' });
+      return;
+    }
+
+    // null unassigns; otherwise the user must exist.
+    let ownerId: number | null = null;
+    if (assignedTo !== null && assignedTo !== undefined && assignedTo !== '') {
+      ownerId = Number(assignedTo);
+      if (!Number.isInteger(ownerId) || ownerId <= 0) {
+        res.status(400).json({ error: 'assignedTo invalide' });
+        return;
+      }
+      const owner = (await db.select({ id: users.id }).from(users).where(eq(users.id, ownerId)))[0];
+      if (!owner) {
+        res.status(400).json({ error: 'Utilisateur inconnu' });
+        return;
+      }
+    }
+
+    await db.update(contacts).set({ assignedTo: ownerId, updatedAt: new Date() })
+      .where(inArray(contacts.id, numericIds));
+    res.json({ success: true, updated: numericIds.length, assignedTo: ownerId });
+  } catch (error) {
+    console.error('Bulk assign error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

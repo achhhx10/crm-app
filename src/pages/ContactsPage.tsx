@@ -155,11 +155,14 @@ export function ContactsPage() {
   const [showHidden, setShowHidden] = useState(false);
   const [bulkStage, setBulkStage] = useState('');
   const [dncFilter, setDncFilter] = useState('exclude');
+  const [assigneeFilter, setAssigneeFilter] = useState('all');
+  const [bulkAssignee, setBulkAssignee] = useState('');
+  const [team, setTeam] = useState<{ id: number; name: string }[]>([]);
   const { widths, save: saveWidths } = useColumnWidths();
   const [form, setForm] = useState({
     businessName: '', contactName: '', phone: '', email: '',
     activity: '', city: '', hasSite: '', siteUrl: '', siteStatus: '',
-    source: '', stage: 'identifie', notes: '', dnc: 0, dncReason: '',
+    source: '', stage: 'identifie', notes: '', dnc: 0, dncReason: '', assignedTo: '',
   });
   const [formError, setFormError] = useState('');
   const [callForm, setCallForm] = useState({
@@ -168,11 +171,19 @@ export function ContactsPage() {
 
   useEffect(() => {
     loadContacts();
-  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, dncFilter, sortField, sortDir]);
+  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, dncFilter, assigneeFilter, sortField, sortDir]);
 
   useEffect(() => {
     api.contacts.activities().then(setActivities).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    // GET /auth/users returns a bare array.
+    api.auth.users()
+      .then((res: any) => setTeam(Array.isArray(res) ? res : res?.users || []))
+      .catch(() => setTeam([]));
+  }, [isAdmin]);
 
   useEffect(() => {
     api.contacts.cities().then(setCities).catch(() => {});
@@ -193,6 +204,7 @@ export function ContactsPage() {
       if (cityFilter !== 'all') params.city = cityFilter;
       if (languageFilter !== 'all') params.language = languageFilter;
       params.dnc = dncFilter;
+      if (assigneeFilter !== 'all') params.assignedTo = assigneeFilter;
       if (reachFilter !== 'all') params.reach = reachFilter;
       if (hasReviewsFilter !== 'all') params.hasReviews = hasReviewsFilter;
       if (minReviews) params.minReviews = minReviews;
@@ -283,6 +295,23 @@ export function ContactsPage() {
     } catch (err) { toast('Erreur lors du changement de stage', 'error'); }
   };
 
+  const handleBulkAssign = async () => {
+    if (!bulkAssignee || selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    try {
+      await api.contacts.bulkAssign(
+        [...selectedIds],
+        bulkAssignee === '__none__' ? null : Number(bulkAssignee),
+      );
+      setSelectedIds(new Set());
+      setBulkAssignee('');
+      loadContacts();
+      toast(`${count} prospect(s) assigné(s)`, 'success');
+    } catch (err) {
+      toast('Erreur lors de l\'attribution', 'error');
+    }
+  };
+
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
     if (!confirm(`Supprimer ${selectedIds.size} prospects ?`)) return;
@@ -309,6 +338,7 @@ export function ContactsPage() {
     if (cityFilter !== 'all') params.city = cityFilter;
     if (languageFilter !== 'all') params.language = languageFilter;
     params.dnc = dncFilter;
+    if (assigneeFilter !== 'all') params.assignedTo = assigneeFilter;
     if (reachFilter !== 'all') params.reach = reachFilter;
     if (hasReviewsFilter !== 'all') params.hasReviews = hasReviewsFilter;
     if (minReviews) params.minReviews = minReviews;
@@ -375,6 +405,7 @@ export function ContactsPage() {
       phone: contact.phone || '', email: contact.email || '', activity: contact.activity || '',
       city: contact.city || '', hasSite: contact.hasSite || '', siteUrl: contact.siteUrl || '',
       dnc: contact.dnc ? 1 : 0, dncReason: contact.dncReason || '',
+      assignedTo: contact.assignedTo ? String(contact.assignedTo) : '',
       siteStatus: contact.siteStatus || '', source: contact.source || '',
       stage: contact.stage || 'identifie', notes: contact.notes || '',
     });
@@ -390,7 +421,7 @@ export function ContactsPage() {
     setForm({
       businessName: '', contactName: '', phone: '', email: '',
       activity: '', city: '', hasSite: '', siteUrl: '', siteStatus: '',
-      source: '', stage: 'identifie', notes: '', dnc: 0, dncReason: '',
+      source: '', stage: 'identifie', notes: '', dnc: 0, dncReason: '', assignedTo: '',
     });
   };
 
@@ -459,6 +490,14 @@ export function ContactsPage() {
           {Object.entries(LANGUAGES).map(([key, l]) => <option key={key} value={key}>{l.label}</option>)}
           <option value="__empty__">Indéterminée</option>
         </Select>
+        {isAdmin ? (
+          <Select value={assigneeFilter} onChange={(e) => { setActivePreset(null); setAssigneeFilter(e.target.value); setPage(1); }}
+            aria-label="Filtrer par commercial">
+            <option value="all">Tous les commerciaux</option>
+            <option value="unassigned">Non assignés</option>
+            {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
+          </Select>
+        ) : null}
         <Select value={dncFilter} onChange={(e) => { setActivePreset(null); setDncFilter(e.target.value); setPage(1); }}
           aria-label="Filtrer les prospects ayant refusé un appel">
           <option value="exclude">Appelables uniquement</option>
@@ -513,6 +552,16 @@ export function ContactsPage() {
               {Object.entries(STAGES).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
             </Select>
             <Button size="sm" onClick={handleBulkStage} disabled={!bulkStage}>Appliquer</Button>
+            {isAdmin && (
+              <>
+                <Select value={bulkAssignee} onChange={(e) => setBulkAssignee(e.target.value)} aria-label="Assigner à un commercial">
+                  <option value="">Assigner à...</option>
+                  {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
+                  <option value="__none__">Personne (désassigner)</option>
+                </Select>
+                <Button size="sm" onClick={handleBulkAssign} disabled={!bulkAssignee}>Assigner</Button>
+              </>
+            )}
             {isAdmin && (
               <Button size="sm" variant="destructive" onClick={handleBulkDelete}>
                 <Trash2 className="h-3 w-3 mr-1" /> Supprimer
@@ -739,6 +788,16 @@ export function ContactsPage() {
             <textarea id="contact-notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
               className="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
           </div>
+          {isAdmin && (
+            <div>
+              <label htmlFor="contact-assigned" className="text-sm font-medium">Commercial assigné</label>
+              <Select id="contact-assigned" value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })}
+                className="mt-1">
+                <option value="">Personne</option>
+                {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
+              </Select>
+            </div>
+          )}
           <div className="rounded-lg border border-border p-3">
             <label className="flex min-h-[44px] items-center gap-2 text-sm font-medium">
               <input

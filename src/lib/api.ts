@@ -122,6 +122,8 @@ export const api = {
     delete: (id: number) => request<any>(`/contacts/${id}`, { method: 'DELETE' }),
     bulkStage: (ids: number[], stage: string) =>
       request<any>('/contacts/bulk-stage', { method: 'PUT', body: JSON.stringify({ ids, stage }) }),
+    bulkAssign: (ids: number[], assignedTo: number | null) =>
+      request<any>('/contacts/bulk-assign', { method: 'PUT', body: JSON.stringify({ ids, assignedTo }) }),
     bulkDelete: (ids: number[]) =>
       request<any>('/contacts/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
     exportCsv: (params?: Record<string, string>) => {
