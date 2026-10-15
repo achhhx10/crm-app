@@ -3,81 +3,97 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light theme. Kept as the base block because Tailwind's darkMode:'class'
+     keys its `dark:` variants off the `.dark` class on <html>. */
   :root {
-    --background: 0 0% 100%;
+    --background: 210 40% 98%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-    --primary: 222 47% 11%;
+    --primary: 193 100% 40%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 40 33% 96%;
+    --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
-    --muted: 40 20% 96%;
-    --muted-foreground: 220 9% 46%;
-    --accent: 38 92% 50%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 220 9% 42%;
+    --accent: 193 100% 45%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
+    --destructive: 3 85% 50%;
     --destructive-foreground: 0 0% 100%;
-    --success: 152 56% 42%;
+    --success: 160 85% 33%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
+    --info: 193 100% 42%;
+    --info-foreground: 0 0% 100%;
+    --warning: 38 92% 45%;
     --warning-foreground: 0 0% 100%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 222 47% 11%;
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 193 100% 45%;
     --radius: 0.5rem;
-    --stage-1: 220 14% 93%;
-    --stage-1-fg: 220 9% 40%;
-    --stage-2: 214 70% 94%;
-    --stage-2-fg: 214 70% 35%;
-    --stage-3: 43 74% 93%;
-    --stage-3-fg: 38 70% 30%;
-    --stage-4: 270 50% 93%;
-    --stage-4-fg: 270 50% 35%;
-    --stage-5: 28 78% 92%;
-    --stage-5-fg: 25 70% 32%;
-    --stage-6: 152 56% 90%;
-    --stage-6-fg: 152 56% 22%;
-    --stage-7: 0 68% 93%;
-    --stage-7-fg: 0 68% 32%;
+    --stage-1: 210 40% 94%;
+    --stage-1-fg: 220 9% 38%;
+    --stage-2: 193 60% 94%;
+    --stage-2-fg: 200 70% 32%;
+    --stage-3: 45 85% 92%;
+    --stage-3-fg: 30 75% 28%;
+    --stage-4: 270 55% 94%;
+    --stage-4-fg: 265 55% 38%;
+    --stage-5: 25 85% 93%;
+    --stage-5-fg: 20 70% 34%;
+    --stage-6: 160 60% 92%;
+    --stage-6-fg: 160 70% 24%;
+    --stage-7: 3 80% 94%;
+    --stage-7-fg: 3 70% 40%;
   }
 
+  /* Dark Cyber-Glass. Default appearance of the application. */
   .dark {
-    --background: 222 50% 6%;
-    --foreground: 210 40% 96%;
-    --card: 222 40% 9%;
-    --card-foreground: 210 40% 96%;
-    --primary: 38 92% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 222 30% 14%;
-    --secondary-foreground: 210 40% 96%;
-    --muted: 222 25% 14%;
-    --muted-foreground: 215 15% 60%;
-    --accent: 38 92% 50%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 63% 40%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 152 50% 35%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 85% 42%;
-    --warning-foreground: 0 0% 100%;
-    --border: 222 25% 16%;
-    --input: 222 25% 16%;
-    --ring: 38 92% 50%;
-    --stage-1: 222 20% 14%;
-    --stage-1-fg: 215 15% 65%;
-    --stage-2: 214 45% 16%;
-    --stage-2-fg: 214 60% 72%;
-    --stage-3: 43 50% 16%;
-    --stage-3-fg: 40 65% 72%;
-    --stage-4: 270 30% 16%;
-    --stage-4-fg: 270 50% 78%;
-    --stage-5: 28 50% 16%;
-    --stage-5-fg: 30 65% 72%;
-    --stage-6: 152 40% 14%;
-    --stage-6-fg: 152 55% 70%;
-    --stage-7: 0 40% 16%;
-    --stage-7-fg: 0 60% 72%;
+    /* Carbon black and abyssal navy, from the brief. */
+    --background: 240 14% 4%;
+    --foreground: 220 30% 94%;
+    --card: 228 24% 8%;
+    --card-foreground: 220 30% 94%;
+    /* Cyan becomes the primary: it is the information/movement accent. */
+    --primary: 193 100% 50%;
+    --primary-foreground: 240 30% 6%;
+    --secondary: 228 22% 12%;
+    --secondary-foreground: 220 30% 94%;
+    --muted: 228 22% 11%;
+    --muted-foreground: 222 14% 66%;
+    --accent: 193 100% 50%;
+    --accent-foreground: 240 30% 6%;
+    --destructive: 3 100% 59%;
+    --destructive-foreground: 240 30% 6%;
+    --success: 159 92% 48%;
+    --success-foreground: 240 30% 6%;
+    --info: 193 100% 50%;
+    --info-foreground: 240 30% 6%;
+    --warning: 38 100% 58%;
+    --warning-foreground: 240 30% 6%;
+    /* Glass edge. Slightly above the 8% of the brief: a 1px border still has to
+       read as an edge, and 8% over near-black is almost invisible. */
+    --border: 220 20% 22%;
+    --input: 220 20% 20%;
+    --ring: 193 100% 50%;
+    --radius: 0.5rem;
+    --glass-bg: 228 33% 11%;
+    --glass-alpha: 0.4;
+    --glass-border: 0 0% 100%;
+    --glass-border-alpha: 0.1;
+    --stage-1: 228 20% 14%;
+    --stage-1-fg: 220 14% 72%;
+    --stage-2: 196 40% 15%;
+    --stage-2-fg: 193 80% 74%;
+    --stage-3: 40 40% 14%;
+    --stage-3-fg: 40 85% 70%;
+    --stage-4: 270 30% 17%;
+    --stage-4-fg: 268 75% 80%;
+    --stage-5: 22 40% 15%;
+    --stage-5-fg: 25 85% 72%;
+    --stage-6: 160 35% 13%;
+    --stage-6-fg: 159 85% 68%;
+    --stage-7: 3 40% 15%;
+    --stage-7-fg: 3 90% 74%;
   }
 }
 
@@ -85,6 +101,7 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -92,6 +109,78 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Ambient colour behind the glass. Fixed and non-interactive so it costs one
+     composited layer rather than a filter on every scrolling row. */
+  .dark body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60rem 40rem at 12% -8%, hsl(268 70% 22% / 0.35), transparent 60%),
+      radial-gradient(52rem 34rem at 88% 4%, hsl(193 90% 20% / 0.28), transparent 62%),
+      radial-gradient(46rem 30rem at 50% 108%, hsl(228 60% 16% / 0.5), transparent 65%);
+  }
+
+  /* When the OS asks for less transparency, drop the blur instead of shipping
+     an unreadable smear. */
+  @media (prefers-reduced-transparency: reduce) {
+    .dark .glass,
+    .dark .glass-panel {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      background-color: hsl(var(--card)) !important;
+    }
+  }
+}
+
+@layer components {
+  /* Frosted container. Deliberately not applied to table rows: backdrop-filter
+     on every one of a hundred rows is what makes glass interfaces crawl. */
+  .glass {
+    background-color: hsl(var(--glass-bg) / var(--glass-alpha));
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid hsl(var(--glass-border) / var(--glass-border-alpha));
+  }
+
+  /* A lit edge, to read as a bevel catching light rather than a drawn border. */
+  .glass-edge {
+    position: relative;
+  }
+  .glass-edge::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      160deg,
+      hsl(193 100% 70% / 0.35),
+      hsl(268 80% 70% / 0.12) 38%,
+      transparent 60%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* Diffuse halo in the dominant colour at 5% opacity, replacing the heavy black
+     drop shadows the brief asked to remove. */
+  .glow-primary { box-shadow: 0 0 24px -6px hsl(var(--primary) / 0.05); }
+  .glow-success { box-shadow: 0 0 24px -6px hsl(var(--success) / 0.05); }
+  .glow-danger  { box-shadow: 0 0 24px -6px hsl(var(--destructive) / 0.05); }
+  .glow-lift:hover {
+    box-shadow: 0 0 32px -8px hsl(var(--primary) / 0.12);
+  }
+
+  /* Neon accent for trend arrows and status dots. */
+  .neon { filter: drop-shadow(0 0 8px currentColor); }
 }
 
 /* Tabular numbers for data-heavy areas */
@@ -111,6 +200,9 @@
   background: hsl(var(--muted-foreground) / 0.3);
   border-radius: 3px;
 }
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.22);
+}
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
 }
@@ -119,7 +211,7 @@
 .dragging {
   opacity: 0.6;
   transform: scale(1.05) rotate(-1deg);
-  box-shadow: 0 12px 24px -8px hsl(var(--foreground) / 0.25);
+  box-shadow: 0 0 32px -6px hsl(var(--primary) / 0.2);
 }
 
 /* Reduced motion */

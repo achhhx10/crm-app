@@ -9,8 +9,11 @@ export function Card({ className = '', interactive = false, children, ...props }
   return (
     <div
       className={cn(
-        'rounded-lg border bg-card text-card-foreground shadow-card transition-[box-shadow,transform] duration-200 dark:shadow-card-dark',
-        interactive && 'hover:shadow-card-hover dark:hover:shadow-card-dark-hover',
+        // Frosted panel in the dark theme; the heavy black drop shadows are
+        // replaced by a diffuse halo in the dominant colour.
+        'rounded-lg border bg-card text-card-foreground transition-[box-shadow,transform] duration-200',
+        'dark:glass dark:glass-edge dark:glow-primary',
+        interactive && 'dark:glow-lift',
         className
       )}
       {...props}

@@ -84,7 +84,7 @@ export function ImportPage() {
           </Button>
 
           {result && (
-            <div className={`p-4 rounded-lg ${result.error ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700'}`}>
+            <div className={`p-4 rounded-lg ${result.error ? 'bg-destructive/10 text-destructive' : 'bg-success/15 text-success'}`}>
               {result.error ? (
                 <div className="flex items-center gap-2">
                   <AlertCircle className="h-4 w-4" />

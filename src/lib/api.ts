@@ -193,6 +193,18 @@ export const api = {
       const q = params ? '?' + new URLSearchParams(params).toString() : '';
       return request<any>(`/dashboard/objections${q}`);
     },
+    kpis: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/dashboard/kpis${q}`);
+    },
+    funnel: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/dashboard/funnel${q}`);
+    },
+    sources: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/dashboard/sources${q}`);
+    },
   },
 
   import: {

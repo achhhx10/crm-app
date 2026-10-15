@@ -124,9 +124,9 @@ export function ContactDetailPage() {
             {contact.hasSite && (
               <div>
                 <span className="text-muted-foreground">Site:</span>{' '}
-                {contact.hasSite === 'pas_de_site' && <span className="text-red-500">Pas de site</span>}
+                {contact.hasSite === 'pas_de_site' && <span className="text-destructive">Pas de site</span>}
                 {contact.hasSite === 'site_vetuste' && <span className="text-yellow-500">Site vétuste</span>}
-                {contact.hasSite === 'site_fonctionnel' && <span className="text-green-500">Site fonctionnel</span>}
+                {contact.hasSite === 'site_fonctionnel' && <span className="text-success">Site fonctionnel</span>}
                 {contact.siteUrl && (
                   <a href={contact.siteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline ml-1">
                     <ExternalLink className="h-3 w-3 inline" />
@@ -227,7 +227,7 @@ export function ContactDetailPage() {
             Recommandations
             <Badge variant="secondary" className="ml-2">{referralsData.total}</Badge>
             {referralsData.signed > 0 && (
-              <Badge className="bg-green-100 text-green-700 ml-1">{referralsData.signed} signée(s)</Badge>
+              <Badge className="bg-success/15 text-success ml-1">{referralsData.signed} signée(s)</Badge>
             )}
           </CardTitle>
         </CardHeader>

@@ -3,8 +3,9 @@ import { Moon, Sun } from 'lucide-react';
 import { Button } from './button';
 
 export function DarkModeToggle() {
+  // Dark is the default appearance; light stays available but opt-in.
   const [dark, setDark] = useState(() => {
-    return localStorage.getItem('crm_theme') === 'dark';
+    return localStorage.getItem('crm_theme') !== 'light';
   });
 
   useEffect(() => {

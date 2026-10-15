@@ -138,7 +138,7 @@ export function ReferralsPage() {
             <Award className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats?.converties || 0}</div>
+            <div className="text-2xl font-bold text-success">{stats?.converties || 0}</div>
             <p className="text-xs text-muted-foreground">5 recommandations = site gratuit</p>
           </CardContent>
         </Card>

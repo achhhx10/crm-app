@@ -188,7 +188,7 @@ export function FollowUpsPage() {
                     {item.phone && (
                       <a href={`tel:${item.phone.replace(/\s/g, '')}`} aria-label={`Appeler ${item.businessName}`}>
                         <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]" title={item.phone}>
-                          <Phone className="h-4 w-4 text-green-600" />
+                          <Phone className="h-4 w-4 text-success" />
                         </Button>
                       </a>
                     )}

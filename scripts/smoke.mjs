@@ -134,6 +134,24 @@ const CHECKS = [
     shape: [{ path: 'activity', type: 'array' }],
   }],
   ['tableau de bord (objections)', '/dashboard/objections'],
+  // Level 1 — vital metrics.
+  ['kpi vitaux', '/dashboard/kpis', {
+    shape: [
+      { path: 'range.label', type: 'string' },
+      { path: 'previousRange.label', type: 'string' },
+      { path: 'revenueSigned', type: 'number' },
+      { path: 'openQuotes.count', type: 'number' },
+      { path: 'openQuotes.amount', type: 'number' },
+    ],
+  }],
+  // Level 2 — funnel.
+  ['entonnoir', '/dashboard/funnel', {
+    shape: [{ path: 'steps', type: 'array' }],
+  }],
+  // Level 3 — per-origin tactical table.
+  ['origines', '/dashboard/sources', {
+    shape: [{ path: 'rows', type: 'array' }],
+  }],
   ['deals', '/deals?limit=5'],
   ['deals (statistiques)', '/deals/stats'],
   ['recommandations', '/referrals?limit=5'],

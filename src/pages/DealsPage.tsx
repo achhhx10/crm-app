@@ -23,9 +23,9 @@ const SITE_TYPES: Record<string, string> = {
 };
 
 const DEAL_STATUSES: Record<string, { label: string; color: string }> = {
-  en_cours: { label: 'En cours', color: 'bg-blue-100 text-blue-700' },
-  signe: { label: 'Signé', color: 'bg-green-100 text-green-700' },
-  perdu: { label: 'Perdu', color: 'bg-red-100 text-red-700' },
+  en_cours: { label: 'En cours', color: 'bg-info/15 text-info' },
+  signe: { label: 'Signé', color: 'bg-success/15 text-success' },
+  perdu: { label: 'Perdu', color: 'bg-destructive/15 text-destructive' },
 };
 
 interface DealStats {
@@ -243,7 +243,7 @@ export function DealsPage() {
             </TableHeader>
             <TableBody>
               {deals.map((deal) => {
-                const dealStatus = DEAL_STATUSES[deal.status] || { label: deal.status, color: 'bg-gray-100 text-gray-700' };
+                const dealStatus = DEAL_STATUSES[deal.status] || { label: deal.status, color: 'bg-muted text-muted-foreground' };
                 return (
                   <TableRow key={deal.id}>
                     <TableCell className="font-medium">{getContactName(deal)}</TableCell>

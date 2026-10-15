@@ -736,7 +736,7 @@ export function ContactsPage() {
                         {contact.phone && (
                           <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" aria-label="Enregistrer un appel"
                             onClick={() => { setQuickCallContact(contact); setQuickCallStartedAt(Date.now()); setCallForm({ result: 'pas_decroche', objection: '', notes: '', nextStep: '' }); }}>
-                            <Phone className="h-3.5 w-3.5 text-green-600" />
+                            <Phone className="h-3.5 w-3.5 text-success" />
                           </Button>
                         )}
                         <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" aria-label="Voir le prospect"
