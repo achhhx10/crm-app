@@ -9,6 +9,9 @@ const browser = await puppeteer.launch({
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
 const page = await browser.newPage();
+// The PWA service worker can hold a stale shell and render the "hors ligne"
+// screen even with a live session, which silently invalidates screenshots.
+await page.setBypassServiceWorker(true);
 await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
 
 const shot = async (name, full = false) => {
@@ -38,6 +41,10 @@ for (const [route, name, full] of [
   await shot(name, full);
 }
 
+// Wait for the table to actually render: networkidle2 can resolve before React
+// paints, which silently produced an all-null measurement.
+await page.waitForSelector('table', { timeout: 20000 });
+
 // Measure the table instead of trusting the screenshot: the "Dernier appel"
 // column used to overlap itself once the columns were squeezed.
 const metrics = await page.evaluate(() => {
@@ -49,7 +56,9 @@ const metrics = await page.evaluate(() => {
   }));
   const bars = [...document.querySelectorAll('.overflow-x-auto')]
     .map(e => Math.round(e.scrollWidth - e.clientWidth));
+  const filterBar = [...document.querySelectorAll('select')].pop()?.closest('.flex');
   return {
+    filterBarHeight: filterBar ? Math.round(filterBar.getBoundingClientRect().height) : null,
     tableWidth: Math.round(table?.getBoundingClientRect().width ?? 0),
     minWidth: table?.style.minWidth || null,
     containerOverflowX: card ? Math.round(card.scrollWidth - card.clientWidth) : null,
