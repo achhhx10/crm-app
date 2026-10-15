@@ -8,6 +8,8 @@ import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { Plus, Search, Phone } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { DateRangePicker } from '../components/ui/date-range';
 import { ContactPicker, PickedContact } from '../components/ui/contact-picker';
 import { useToast } from '../components/ui/toast';
 import { CALL_RESULTS, OBJECTIONS, formatDate, formatDateTime, formatDuration } from '../lib/utils';
@@ -21,6 +23,28 @@ function isOverdue(nextStepAt: string | number | Date): boolean {
 export function CallsPage() {
   const { toast } = useToast();
   const [onlyFollowUps, setOnlyFollowUps] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rangePreset = searchParams.get('range') || 'month';
+  const range = { from: searchParams.get('from') || '', to: searchParams.get('to') || '' };
+
+  const onRangeChange = (next: { from: string; to: string }, nextPreset: string) => {
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      params.set('range', nextPreset);
+      if (next.from) params.set('from', next.from); else params.delete('from');
+      if (next.to) params.set('to', next.to); else params.delete('to');
+      return params;
+    }, { replace: true });
+  };
+
+  const rangeParams = (): Record<string, string> => {
+    const out: Record<string, string> = {};
+    if (rangePreset !== 'all') {
+      if (range.from) out.from = range.from;
+      if (range.to) out.to = range.to;
+    }
+    return out;
+  };
   const [calls, setCalls] = useState<any[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -35,7 +59,7 @@ export function CallsPage() {
   useEffect(() => {
     loadCalls();
     loadContacts();
-  }, [contactFilter, onlyFollowUps]);
+  }, [contactFilter, onlyFollowUps, rangePreset, range.from, range.to]);
 
   const loadCalls = async () => {
     setLoading(true);
@@ -45,7 +69,7 @@ export function CallsPage() {
       if (onlyFollowUps) params.followUp = 'true';
       const [callsData, statsData] = await Promise.all([
         api.calls.list(params),
-        api.calls.stats(),
+        api.calls.stats(rangeParams()),
       ]);
       // Tolerate both response shapes so the front-end survives a frontend-first deploy
       // (old API returns a bare array, new API returns { calls, total }).
@@ -121,11 +145,13 @@ export function CallsPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Ce mois</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {stats?.range?.label ? 'Appels sur la période' : 'Appels'}
+            </CardTitle>
             <Phone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.month || 0}</div>
+            <div className="text-2xl font-bold">{stats?.total || 0}</div>
           </CardContent>
         </Card>
         <Card>

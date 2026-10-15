@@ -13,6 +13,24 @@ const referralSchema = z.object({
   referredEmail: z.string().email().optional().or(z.literal('')).nullable()
 });
 
+// One vocabulary for referrals. The web wrote 'convertie'/'perdue' while mobile
+// wrote 'signe'/'perdu', and the counters only ever matched 'signe', so a referral
+// converted on the web was counted nowhere and one marked on mobile rendered as
+// the raw string 'signe'.
+const REFERRAL_STATUSES = ['contacte', 'en_attente', 'signe', 'perdu'] as const;
+
+// Accepts the legacy French vocabulary and stores the canonical one.
+const LEGACY_STATUS_MAP: Record<string, string> = {
+  convertie: 'signe',
+  perdue: 'perdu',
+};
+
+function normaliseStatus(value: unknown): string | null {
+  if (typeof value !== 'string' || value === '') return null;
+  const mapped = LEGACY_STATUS_MAP[value] ?? value;
+  return (REFERRAL_STATUSES as readonly string[]).includes(mapped) ? mapped : null;
+}
+
 const router = Router();
 
 function isAdmin(req: AuthRequest): boolean {
@@ -71,7 +89,7 @@ router.get('/contact/:contactId', authMiddleware, async (req: AuthRequest, res: 
       .orderBy(desc(referrals.createdAt));
 
     const total = contactReferrals.length;
-    const signed = contactReferrals.filter(r => r.status === 'signe').length;
+    const signed = contactReferrals.filter(r => normaliseStatus(r.status) === 'signe').length;
 
     res.json({ referrals: contactReferrals, total, signed });
   } catch (error) {
@@ -86,7 +104,7 @@ router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => 
     if (isAdmin(req)) {
       totalReferrals = (await db.select({ value: count() }).from(referrals))[0]?.value ?? 0;
       signedReferrals = (await db.select({ value: count() }).from(referrals)
-        .where(eq(referrals.status, 'signe')))[0]?.value ?? 0;
+        .where(inArray(referrals.status, ['signe', 'convertie'])))[0]?.value ?? 0;
     } else {
       const ids = await userContactIds(req.user!.userId);
       if (ids.length === 0) {
@@ -96,7 +114,7 @@ router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => 
         const contactFilter = inArray(referrals.sourceContactId, ids);
         totalReferrals = (await db.select({ value: count() }).from(referrals).where(contactFilter))[0]?.value ?? 0;
         signedReferrals = (await db.select({ value: count() }).from(referrals)
-          .where(and(contactFilter, eq(referrals.status, 'signe'))))[0]?.value ?? 0;
+          .where(and(contactFilter, inArray(referrals.status, ['signe', 'convertie']))))[0]?.value ?? 0;
       }
     }
 
@@ -164,6 +182,14 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
     }
     if (updates.referredContactId !== undefined && updates.referredContactId !== null) {
       updates.referredContactId = Number(updates.referredContactId);
+    }
+    if ('status' in updates) {
+      const canonical = normaliseStatus(updates.status);
+      if (!canonical) {
+        res.status(400).json({ error: `Statut invalide. Attendu: ${REFERRAL_STATUSES.join(', ')}` });
+        return;
+      }
+      updates.status = canonical;
     }
 
     const [referral] = await db.update(referrals).set(updates).where(eq(referrals.id, id)).returning();

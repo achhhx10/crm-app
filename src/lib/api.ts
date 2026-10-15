@@ -141,7 +141,10 @@ export const api = {
       return request<{ calls: any[]; total: number }>(`/calls${query}`);
     },
     byContact: (contactId: number) => request<any[]>(`/calls/contact/${contactId}`),
-    stats: () => request<any>('/calls/stats'),
+    stats: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/calls/stats${q}`);
+    },
     create: (data: any) => request<any>('/calls', { method: 'POST', body: JSON.stringify(data) }),
   },
 
@@ -150,7 +153,10 @@ export const api = {
       const query = params ? '?' + new URLSearchParams(params).toString() : '';
       return request<{ deals: any[]; total: number; page: number; limit: number }>(`/deals${query}`);
     },
-    stats: () => request<any>('/deals/stats'),
+    stats: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/deals/stats${q}`);
+    },
     create: (data: any) => request<any>('/deals', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => request<any>(`/deals/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: number) => request<any>(`/deals/${id}`, { method: 'DELETE' }),
@@ -168,10 +174,23 @@ export const api = {
   },
 
   dashboard: {
-    summary: () => request<any>('/dashboard/summary'),
+    summary: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/dashboard/summary${q}`);
+    },
     pipeline: () => request<any>('/dashboard/pipeline'),
-    performance: () => request<any[]>('/dashboard/performance'),
-    activity: () => request<any[]>('/dashboard/activity'),
+    performance: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/dashboard/performance${q}`);
+    },
+    activity: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/dashboard/activity${q}`);
+    },
+    objections: (params?: Record<string, string>) => {
+      const q = params ? '?' + new URLSearchParams(params).toString() : '';
+      return request<any>(`/dashboard/objections${q}`);
+    },
   },
 
   import: {

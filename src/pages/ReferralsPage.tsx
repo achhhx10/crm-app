@@ -14,6 +14,20 @@ import { formatDate } from '../lib/utils';
 import { Pagination } from '../components/ui/pagination';
 import type { Contact } from '../types';
 
+const REFERRAL_STATUS_LABELS: Record<string, string> = {
+  contacte: 'Contacté',
+  en_attente: 'En attente',
+  signe: 'Convertie',
+  perdu: 'Perdue',
+};
+
+/** Accepts the legacy French values written by older builds. */
+function normaliseReferralStatus(value: string | null | undefined): string {
+  if (value === 'convertie') return 'signe';
+  if (value === 'perdue') return 'perdu';
+  return value || 'contacte';
+}
+
 export function ReferralsPage() {
   const { toast } = useToast();
   const [referrals, setReferrals] = useState<any[]>([]);
@@ -152,31 +166,41 @@ export function ReferralsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {referrals.map((ref) => (
+              {referrals.map((ref) => {
+                const canonical = normaliseReferralStatus(ref.status);
+                return (
                 <TableRow key={ref.id}>
                   <TableCell>{formatDate(ref.createdAt)}</TableCell>
                   <TableCell className="font-medium">{ref.sourceName || '-'}</TableCell>
                   <TableCell>{ref.referredName || '-'}</TableCell>
                   <TableCell>{ref.referredPhone || '-'}</TableCell>
                   <TableCell>
-                    <Badge variant={ref.status === 'convertie' ? 'default' : ref.status === 'en_attente' ? 'secondary' : 'outline'}>
-                      {ref.status === 'convertie' ? 'Convertie' : ref.status === 'en_attente' ? 'En attente' : 'Perdue'}
+                    <Badge variant={
+                      canonical === 'signe' ? 'default'
+                        : canonical === 'en_attente' ? 'secondary'
+                          : canonical === 'perdu' ? 'outline' : 'secondary'
+                    }>
+                      {REFERRAL_STATUS_LABELS[canonical] || canonical}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {ref.status === 'en_attente' && (
+                    {/* Actions must stay available until the referral is decided:
+                        they used to render only for 'en_attente', so a brand-new
+                        'contacte' referral showed "Perdue" with no way to fix it. */}
+                    {canonical !== 'signe' && canonical !== 'perdu' && (
                       <div className="flex gap-1">
-                        <Button size="sm" variant="outline" onClick={() => handleUpdateStatus(ref.id, 'convertie')}>
+                        <Button size="sm" variant="outline" onClick={() => handleUpdateStatus(ref.id, 'signe')}>
                           Convertie
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => handleUpdateStatus(ref.id, 'perdue')}>
+                        <Button size="sm" variant="ghost" onClick={() => handleUpdateStatus(ref.id, 'perdu')}>
                           Perdue
                         </Button>
                       </div>
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
               {referrals.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">

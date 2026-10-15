@@ -2,9 +2,10 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { deals, contacts } from '../db/schema.js';
-import { eq, desc, sql, count } from 'drizzle-orm';
+import { eq, desc, sql, count, and } from 'drizzle-orm';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { resolveRange } from '../utils/dateRange.js';
 
 const dealSchema = z.object({
   contactId: z.number().int().positive(),
@@ -64,32 +65,39 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 
 router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
+    const range = resolveRange(req.query as Record<string, unknown>);
     const uid = req.user!.userId;
     const isAdminUser = isAdmin(req);
+    const owner = isAdminUser ? sql`1=1` : sql`${deals.assignedTo} = ${uid}`;
 
-    const totalDeals = isAdminUser
-      ? (await db.select({ value: count() }).from(deals))[0]?.value ?? 0
-      : (await db.select({ value: count() }).from(deals).where(eq(deals.assignedTo, uid)))[0]?.value ?? 0;
+    const createdInRange = sql`${deals.createdAt} >= ${range.from} AND ${deals.createdAt} <= ${range.to}`;
+    const signedInRange = sql`${deals.signedAt} >= ${range.from} AND ${deals.signedAt} <= ${range.to}`;
 
-    const signedDeals = isAdminUser
-      ? (await db.select({ value: count() }).from(deals).where(eq(deals.status, 'signe')))[0]?.value ?? 0
-      : (await db.select({ value: count() }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe'`))[0]?.value ?? 0;
+    const totalDeals = (await db.select({ value: count() }).from(deals)
+      .where(and(owner, createdInRange)))[0]?.value ?? 0;
 
-    const totalRevenue = isAdminUser
-      ? (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(eq(deals.status, 'signe')))[0]?.value ?? 0
-      : (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe'`))[0]?.value ?? 0;
+    const signedDeals = (await db.select({ value: count() }).from(deals)
+      .where(and(owner, createdInRange, eq(deals.status, 'signe'))))[0]?.value ?? 0;
 
-    const monthRevenue = isAdminUser
-      ? (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.status} = 'signe' AND ${deals.signedAt} >= ${thirtyDaysAgo}`))[0]?.value ?? 0
-      : (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals).where(sql`${deals.assignedTo} = ${uid} AND ${deals.status} = 'signe' AND ${deals.signedAt} >= ${thirtyDaysAgo}`))[0]?.value ?? 0;
+    // All-time signed revenue: a lifetime figure, never date-filtered.
+    const totalRevenue = (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals)
+      .where(and(owner, eq(deals.status, 'signe'))))[0]?.value ?? 0;
+
+    // Revenue of the period, attributed on signature date.
+    const periodRevenue = (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals)
+      .where(and(owner, eq(deals.status, 'signe'), signedInRange)))[0]?.value ?? 0;
+
+    // Open pipeline: money still in flight, which nothing summed before.
+    const openPipeline = (await db.select({ value: sql<number>`COALESCE(SUM(${deals.amount}), 0)` }).from(deals)
+      .where(and(owner, eq(deals.status, 'en_cours'))))[0]?.value ?? 0;
 
     res.json({
+      range,
       total: totalDeals,
       signed: signedDeals,
       totalRevenue: Number(totalRevenue),
-      monthRevenue: Number(monthRevenue),
+      periodRevenue: Number(periodRevenue),
+      openPipeline: Number(openPipeline),
       closingRate: totalDeals > 0 ? Math.round((signedDeals / totalDeals) * 100) : 0,
     });
   } catch (error) {

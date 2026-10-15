@@ -5,6 +5,7 @@ import { calls, contacts } from '../db/schema.js';
 import { eq, desc, sql, and, count } from 'drizzle-orm';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { resolveRange } from '../utils/dateRange.js';
 
 const callSchema = z.object({
   contactId: z.number().int().positive(),
@@ -111,28 +112,31 @@ router.get('/contact/:contactId', authMiddleware, async (req: AuthRequest, res: 
 
 router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // Explicit window instead of a rolling 30 days presented as "ce mois".
+    const range = resolveRange(req.query as Record<string, unknown>);
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
     const userFilter = isAdmin(req) ? sql`1=1` : eq(calls.userId, req.user!.userId);
+    const inRange = sql`${calls.date} >= ${range.from} AND ${calls.date} <= ${range.to}`;
 
-    const totalCalls = (await db.select({ value: count() }).from(calls).where(userFilter))[0]?.value ?? 0;
+    const totalCalls = (await db.select({ value: count() }).from(calls)
+      .where(and(userFilter, inRange)))[0]?.value ?? 0;
     const callsToday = (await db.select({ value: count() }).from(calls)
       .where(and(userFilter, sql`${calls.date} >= ${startOfDay}`)))[0]?.value ?? 0;
-    const callsMonth = (await db.select({ value: count() }).from(calls)
-      .where(and(userFilter, sql`${calls.date} >= ${thirtyDaysAgo}`)))[0]?.value ?? 0;
 
+    // 'refus' and 'a_rappeler' are mobile-only results; counting them as
+    // answered inflated the connection rate depending on the device used.
     const answeredCalls = (await db.select({ value: count() }).from(calls)
-      .where(and(userFilter, sql`${calls.result} != 'pas_decroche' AND ${calls.result} != 'messagerie'`)))[0]?.value ?? 0;
+      .where(and(userFilter, inRange, sql`${calls.result} NOT IN ('pas_decroche','messagerie','refus','a_rappeler')`)))[0]?.value ?? 0;
 
     const rdvObtained = (await db.select({ value: count() }).from(calls)
-      .where(and(userFilter, eq(calls.result, 'rdv_obtenu'))))[0]?.value ?? 0;
+      .where(and(userFilter, inRange, eq(calls.result, 'rdv_obtenu'))))[0]?.value ?? 0;
 
     res.json({
+      range,
       total: totalCalls,
       today: callsToday,
-      month: callsMonth,
       answered: answeredCalls,
       rdvObtained,
       connectionRate: totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0,

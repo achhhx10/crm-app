@@ -10,6 +10,8 @@ import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/u
 import { Plus, DollarSign, TrendingUp, Trash2 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { formatCurrency, formatDate, STAGES } from '../lib/utils';
+import { useSearchParams } from 'react-router-dom';
+import { DateRangePicker } from '../components/ui/date-range';
 import { Pagination } from '../components/ui/pagination';
 import { ContactPicker, PickedContact } from '../components/ui/contact-picker';
 
@@ -30,7 +32,8 @@ interface DealStats {
   total: number;
   signed: number;
   totalRevenue: number;
-  monthRevenue: number;
+  periodRevenue: number;
+  openPipeline: number;
   closingRate: number;
 }
 
@@ -57,6 +60,19 @@ export function DealsPage() {
   const [pickedContact, setPickedContact] = useState<PickedContact | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rangePreset = searchParams.get('range') || 'month';
+  const range = { from: searchParams.get('from') || '', to: searchParams.get('to') || '' };
+
+  const onRangeChange = (next: { from: string; to: string }, nextPreset: string) => {
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      params.set('range', nextPreset);
+      if (next.from) params.set('from', next.from); else params.delete('from');
+      if (next.to) params.set('to', next.to); else params.delete('to');
+      return params;
+    }, { replace: true });
+  };
   const [total, setTotal] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
@@ -68,13 +84,15 @@ export function DealsPage() {
 
   useEffect(() => {
     loadData();
-  }, [page]);
+  }, [page, rangePreset, range.from, range.to]);
 
   const loadData = async () => {
     try {
       const [d, s] = await Promise.all([
         api.deals.list({ page: String(page), limit: '20' }),
-        api.deals.stats(),
+        api.deals.stats(rangePreset !== 'all'
+          ? { ...(range.from ? { from: range.from } : {}), ...(range.to ? { to: range.to } : {}) }
+          : {}),
       ]);
       setDeals(d.deals);
       setTotal(d.total);
@@ -180,11 +198,11 @@ export function DealsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">CA du Mois</CardTitle>
+            <CardTitle className="text-sm font-medium">CA signé sur la période</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats?.monthRevenue || 0)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(stats?.periodRevenue || 0)}</div>
           </CardContent>
         </Card>
 

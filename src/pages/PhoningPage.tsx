@@ -61,12 +61,27 @@ export function PhoningPage() {
   const [form, setForm] = useState({ result: '', objection: '', notes: '', nextStep: '', nextStepAt: '' });
   const [history, setHistory] = useState<Call[]>([]);
   const [elapsed, setElapsed] = useState(0);
+  // The timer used to start when the card rendered, so "duration" measured how
+  // long a lead sat open, including reading a menu or eating lunch. It now
+  // measures from the first real interaction, which is the closest proxy for
+  // talk time available without an explicit hang-up event. A ref, not state:
+  // the interval below reads it and its deps are intentionally fixed.
+  const interactingRef = useRef(false);
 
   const startedAt = useRef<number>(Date.now());
   // Ref (not state) so the guard flips synchronously: pressing Enter while a result
   // button has focus fires both our keydown handler and the button's own click.
   const savingRef = useRef(false);
   const [showHelp, setShowHelp] = useState(false);
+
+  /** Any edit marks the rep as engaged: the timer starts here, not on render.
+   *  Only the first interaction sets the origin, so typing does not keep
+   *  resetting the clock. */
+  const markInteracting = () => {
+    if (interactingRef.current) return;
+    interactingRef.current = true;
+    startedAt.current = Date.now();
+  };
 
   const current = queue[index] ?? null;
 
@@ -160,6 +175,7 @@ export function PhoningPage() {
     if (!current) { setHistory([]); return; }
     startedAt.current = Date.now();
     setElapsed(0);
+    interactingRef.current = false;
 
     // restore draft for this lead
     let draft = { result: '', objection: '', notes: '', nextStep: '', nextStepAt: '' };
@@ -167,6 +183,8 @@ export function PhoningPage() {
       const raw = localStorage.getItem(DRAFT_PREFIX + current.id);
       if (raw) draft = { ...draft, ...JSON.parse(raw) };
     } catch { /* ignore */ }
+    // A restored draft means work already happened on this lead.
+    interactingRef.current = !!(draft.result || draft.objection || draft.notes || draft.nextStep);
     setForm(draft);
 
     api.calls.byContact(current.id)
@@ -186,7 +204,10 @@ export function PhoningPage() {
 
   // call timer
   useEffect(() => {
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)), 1000);
+    const t = setInterval(() => {
+      const from = interactingRef.current ? startedAt.current : Date.now();
+      setElapsed(Math.max(0, Math.floor((Date.now() - from) / 1000)));
+    }, 1000);
     return () => clearInterval(t);
   }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -287,6 +308,8 @@ export function PhoningPage() {
         default:
           if (/^[1-5]$/.test(e.key)) {
             e.preventDefault();
+            // Fastest path to logging a result, so it must start the clock too.
+            markInteracting();
             setForm(prev => ({ ...prev, result: RESULT_KEYS[Number(e.key) - 1] || prev.result }));
           }
       }
@@ -442,7 +465,12 @@ export function PhoningPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium">Résultat de l'appel</CardTitle>
-                <span className="text-xs text-muted-foreground tabular-nums">{timerLabel}</span>
+                <span
+                  className="text-xs text-muted-foreground tabular-nums"
+                  title="Durée mesurée à partir de votre première interaction avec la fiche, pas depuis son affichage."
+                >
+                  {timerLabel}
+                </span>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -452,7 +480,7 @@ export function PhoningPage() {
                     key={key}
                     variant={form.result === key ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setForm(prev => ({ ...prev, result: key }))}
+                    onClick={() => { markInteracting(); setForm(prev => ({ ...prev, result: key })); }}
                   >
                     <span className="text-xs opacity-60 mr-1">{i + 1}</span>
                     {CALL_RESULTS[key]}
@@ -467,7 +495,7 @@ export function PhoningPage() {
                     id="ph-objection"
                     className="mt-1"
                     value={form.objection}
-                    onChange={e => setForm({ ...form, objection: e.target.value })}
+                    onChange={e => { markInteracting(); setForm({ ...form, objection: e.target.value }); }}
                   >
                     <option value="">Aucune</option>
                     {Object.entries(OBJECTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -481,7 +509,7 @@ export function PhoningPage() {
                       className="mt-1"
                       placeholder="ex. rappeler jeudi"
                       value={form.nextStep}
-                      onChange={e => setForm({ ...form, nextStep: e.target.value })}
+                      onChange={e => { markInteracting(); setForm({ ...form, nextStep: e.target.value }); }}
                     />
                   </div>
                   <div>
@@ -492,7 +520,7 @@ export function PhoningPage() {
                       className="mt-1"
                       min={new Date().toISOString().slice(0, 10)}
                       value={form.nextStepAt}
-                      onChange={e => setForm({ ...form, nextStepAt: e.target.value })}
+                      onChange={e => { markInteracting(); setForm({ ...form, nextStepAt: e.target.value }); }}
                     />
                   </div>
                 </div>
@@ -506,7 +534,7 @@ export function PhoningPage() {
                   placeholder="Ce que le lead a dit, son état d'esprit, le ton..."
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   value={form.notes}
-                  onChange={e => setForm({ ...form, notes: e.target.value })}
+                  onChange={e => { markInteracting(); setForm({ ...form, notes: e.target.value }); }}
                 />
               </div>
 

@@ -125,6 +125,12 @@ async function initSchema() {
   ALTER TABLE calls ADD COLUMN IF NOT EXISTS next_step_at TIMESTAMP;
   CREATE INDEX IF NOT EXISTS idx_calls_next_step_at ON calls(next_step_at);
 
+  -- Referral status vocabulary: the web wrote 'convertie'/'perdue' while mobile
+  -- wrote 'signe'/'perdu'. Normalise to the canonical pair so counters and badges
+  -- agree regardless of which app recorded the referral.
+  UPDATE referrals SET status = 'signe' WHERE status = 'convertie';
+  UPDATE referrals SET status = 'perdu' WHERE status = 'perdue';
+
   -- Opt-out flag, shared across every rep and every device.
   ALTER TABLE contacts ADD COLUMN IF NOT EXISTS dnc INTEGER DEFAULT 0;
   ALTER TABLE contacts ADD COLUMN IF NOT EXISTS dnc_reason TEXT;

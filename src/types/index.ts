@@ -75,25 +75,49 @@ export interface Referral {
   createdAt: number | null;
 }
 
+/** Effective window the server counted, echoed back so the UI never guesses. */
+export interface ReportRange {
+  from: string;
+  to: string;
+  label: string;
+  days: number;
+}
+
 export interface DashboardSummary {
+  range: ReportRange;
   contacts: { total: number };
   calls: {
     total: number;
     today: number;
-    month: number;
     answered: number;
+    meetings: number;
     connectionRate: number;
+    meetingRate: number;
   };
   deals: {
     total: number;
     signed: number;
-    monthRevenue: number;
+    revenue: number;
+    openPipeline: number;
     closingRate: number;
   };
   referrals: {
     total: number;
     signed: number;
   };
+}
+
+export interface ObjectionBreakdown {
+  range: ReportRange;
+  total: number;
+  objections: { objection: string; occurrences: number; share: number }[];
+}
+
+export interface FunnelStage {
+  stage: string;
+  count: number;
+  /** Share of the previous stage still present here, or null for the first stage. */
+  reachRate: number | null;
 }
 
 export interface PipelineData {
@@ -118,6 +142,7 @@ export interface PerformanceData {
 
 export interface ActivityItem {
   id: number;
+  contactId: number | null;
   date: number | null;
   result: string;
   notes: string | null;
