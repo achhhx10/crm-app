@@ -15,9 +15,19 @@
  * login-only endpoints. Always dry-run first.
  */
 import pg from 'pg';
+import { execFile } from 'node:child_process';
 import { detectFromFields, detectFromHtml, normalizeUrl } from './lib/language.mjs';
 
 const { Client } = pg;
+
+// A single failing socket must never end a multi-hour run. undici can throw
+// asynchronously from its socket handler, out of reach of any local try/catch.
+let crashed = 0;
+process.on('uncaughtException', (err) => {
+  crashed++;
+  if (crashed > 200) { console.error('too many uncaught errors, stopping'); process.exit(1); }
+  console.error('uncaught (ignored):', err?.message || err);
+});
 
 const argv = process.argv.slice(2);
 const mode = argv[0];
@@ -106,6 +116,50 @@ async function runHeuristic() {
 
 /* --------------------------------- crawl --------------------------------- */
 
+/**
+ * HTTP transport via curl.
+ *
+ * Node's global fetch is undici under the hood, and it hits an internal
+ * assertion (assert(!this.paused) in Parser.finish) when a socket is torn down
+ * mid-response. The guard above keeps the process alive, but the connection pool
+ * stays degraded and error rates climb from 7% to 45%. curl does not have that
+ * failure mode, and spawning it per request is cheap enough at this rate.
+ */
+function curlFetch(url, { maxBytes = MAX_BYTES, timeoutMs = TIMEOUT_MS, accept = 'text/html,application/xhtml+xml' } = {}) {
+  const secs = Math.max(1, Math.floor(timeoutMs / 1000));
+  const marker = '\n__HTTP_META__';
+  return new Promise((resolve) => {
+    execFile('curl', [
+      '-s', '-L', '--max-redirs', '5',
+      '-k', '--compressed',
+      '--connect-timeout', String(secs),
+      '--max-time', String(secs),
+      '-A', 'crm-language-detector (+internal use)',
+      '-H', 'Accept: ' + accept,
+      '-H', 'Accept-Language: de,fr,en;q=0.8',
+      '-w', marker + '%{http_code} %{content_type}',
+      url,
+    ], {
+      maxBuffer: maxBytes * 4,
+      timeout: timeoutMs + 3000,
+      killSignal: 'SIGKILL',
+    }, (err, stdout) => {
+      if (!stdout) return resolve({ error: err && err.killed ? 'timeout' : 'curl_failed' });
+      const at = stdout.lastIndexOf(marker);
+      if (at === -1) return resolve({ error: 'bad_output' });
+      const body = stdout.slice(0, at);
+      const [status, ctype = ''] = stdout.slice(at + marker.length).trim().split(' ');
+      if (!/^\d{3}$/.test(status)) return resolve({ error: 'bad_status' });
+      resolve({
+        status: Number(status),
+        ctype,
+        html: body.length > maxBytes ? body.slice(0, maxBytes) : body,
+        truncated: body.length > maxBytes,
+      });
+    });
+  });
+}
+
 const robotsCache = new Map();
 
 /**
@@ -128,12 +182,9 @@ async function getRobots(origin) {
   const rules = [];
   let delay = DELAY_MS;
   try {
-    const res = await fetch(`${origin}/robots.txt`, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { 'User-Agent': 'crm-language-detector (+internal use)' },
-    });
-    if (res.ok) {
-      const text = await res.text();
+    const res = await curlFetch(`${origin}/robots.txt`, { accept: 'text/plain', timeoutMs: 8000 });
+    if (res.status === 200) {
+      const text = res.html;
       // Group consecutive User-agent lines, then read the rules that follow.
       let applies = false;
       for (const raw of text.split('\n')) {
@@ -171,31 +222,12 @@ async function politeWait(url, delayMs) {
 
 async function fetchPage(url, delayMs) {
   await politeWait(url, delayMs);
-  const res = await fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    headers: {
-      'User-Agent': 'crm-language-detector (+internal use)',
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'de,fr,en;q=0.8',
-    },
-  });
-  if (!res.ok) return { error: 'http_' + res.status };
-  const ctype = res.headers.get('content-type') || '';
-  if (!/text\/html/i.test(ctype)) return { error: 'not_html' };
-  const reader = res.body?.getReader();
-  if (!reader) return { error: 'no_body' };
-  const chunks = [];
-  let size = 0;
-  while (size < MAX_BYTES) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.length;
-    chunks.push(value);
-  }
-  try { await reader.cancel(); } catch { /* ignore */ }
-  const html = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
-  return { html, finalUrl: res.url };
+  const res = await curlFetch(url.toString());
+  if (res.error) return res;
+  if (res.status === 0) return { error: 'unreachable' };   // curl could not connect at all
+  if (res.status !== 200) return { error: 'http_' + res.status };
+  if (!/text\/html/i.test(res.ctype || '')) return { error: 'not_html' };
+  return { html: res.html, finalUrl: url.toString() };
 }
 
 async function runCrawl() {
@@ -204,8 +236,25 @@ async function runCrawl() {
   // hold a tunnel open to the production database.
   let rows;
   if (CANDIDATES) {
-    const { readFileSync } = await import('node:fs');
+    const { readFileSync, existsSync } = await import('node:fs');
     rows = readFileSync(CANDIDATES, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    // Resume on ids that were *attempted*, not on ids that were *detected*: skipping
+    // only the successes re-queues every previous failure at the front of the list,
+    // which makes the head of the run a biased sample of the hardest sites.
+    const processedFile = OUT ? OUT + '.processed' : null;
+    if (processedFile && existsSync(processedFile)) {
+      const done = new Set(readFileSync(processedFile, 'utf8').split('\n').filter(Boolean).map(Number));
+      const before = rows.length;
+      rows = rows.filter((r) => !done.has(r.id));
+      console.log(`reprise : ${done.size} candidats deja traites sauves, ${before - rows.length} a retraiter`);
+    } else if (OUT && existsSync(OUT)) {
+      const already = new Set(
+        readFileSync(OUT, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).id)
+      );
+      const before = rows.length;
+      rows = rows.filter((r) => !already.has(r.id));
+      console.log(`reprise (approximative) : ${already.size} resultats conserves, ${before - rows.length} candidats requeues`);
+    }
     if (LIMIT) rows = rows.slice(0, LIMIT);
   } else {
     let sql = `select id, business_name, city, site_url from contacts
@@ -217,25 +266,44 @@ async function runCrawl() {
     ({ rows } = await (await getDb()).query(sql, qp));
   }
   console.log(`candidates avec site web : ${rows.length}`);
+
+  const stats = { detected: 0, robots: 0, error: 0, inconclusive: 0 };
+  const errors = {};
+  const updates = [];
+
+  // Group by host and fetch each domain once. The language belongs to the site, not
+  // to the lead, so every lead sharing a host gets the same answer. This also removes
+  // the stalls: a single host can carry hundreds of leads (yellow.local.ch alone had
+  // 631), and the per-host politeness delay would serialise them into minutes of
+  // workers sleeping with no request in flight.
+  const groups = new Map();
+  for (const r of rows) {
+    const u = normalizeUrl(r.site_url);
+    if (!u) { stats.error++; errors['bad_url'] = (errors['bad_url'] || 0) + 1; continue; }
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    if (!groups.has(host)) groups.set(host, []);
+    groups.get(host).push({ row: r, url: u });
+  }
+  const todo = [...groups.values()];
+  console.log(`domaines uniques a interroger : ${todo.length}` + (LIMIT ? ` (limite ${LIMIT})` : ''));
   console.log(`limite: ${LIMIT || 'aucune'} | concurrence: ${CONCURRENCY} | delai: ${DELAY_MS}ms`);
   if (DRY) console.log('DRY RUN — aucune ecriture');
 
-  const stats = { detected: 0, robots: 0, error: 0, inconclusive: 0, ok: 0 };
-  const errors = {};
-  const updates = [];
   let cursor = 0;
   // One append handle for the whole run: re-opening the file per hit truncated it.
   let sink = null;
+  let seen = null;
   if (OUT && !DRY) {
     const { createWriteStream } = await import('node:fs');
     sink = createWriteStream(OUT, { flags: 'a' });
+    seen = createWriteStream(OUT + '.processed', { flags: 'a' });
   }
 
   async function worker() {
-    while (cursor < rows.length) {
-      const row = rows[cursor++];
-      const url = normalizeUrl(row.site_url);
-      if (!url) { stats.error++; errors['bad_url'] = (errors['bad_url'] || 0) + 1; continue; }
+    while (cursor < todo.length) {
+      const group = todo[cursor++];
+      const { row, url } = group[0];
+      if (seen) for (const g of group) seen.write(g.row.id + '\n');   // attempted, whatever the outcome
 
       const robots = await robotsAllows(url);
       if (!robots.allowed) { stats.robots++; continue; }
@@ -246,8 +314,7 @@ async function runCrawl() {
         page = await fetchPage(url, hostDelay);
       } catch (e) {
         stats.error++;
-        const k = e.name === 'TimeoutError' ? 'timeout' : 'network';
-        errors[k] = (errors[k] || 0) + 1;
+        errors[e.name === 'TimeoutError' ? 'timeout' : 'network'] = (errors[e.name === 'TimeoutError' ? 'timeout' : 'network'] || 0) + 1;
         continue;
       }
       if (page.error) { stats.error++; errors[page.error] = (errors[page.error] || 0) + 1; continue; }
@@ -255,13 +322,15 @@ async function runCrawl() {
       const det = detectFromHtml(page.html, page.finalUrl || url.toString());
       if (!det) { stats.inconclusive++; continue; }
 
-      stats.detected++;
-      updates.push({ id: row.id, language: det.language, source: det.source });
-      if (sink) {
-        sink.write(JSON.stringify(updates.at(-1)) + '\n');
-      } else if (!DRY && !OUT) {
-        await (await getDb()).query(`update contacts set language = $1, language_source = $2 where id = $3`,
-                       [det.language, det.source, row.id]);
+      stats.detected += group.length;
+      for (const g of group) {
+        const rec = { id: g.row.id, language: det.language, source: det.source };
+        updates.push(rec);
+        if (sink) sink.write(JSON.stringify(rec) + '\n');
+        else if (!DRY && !OUT) {
+          await (await getDb()).query(`update contacts set language = $1, language_source = $2 where id = $3`,
+            [det.language, det.source, g.row.id]);
+        }
       }
     }
   }
@@ -269,20 +338,21 @@ async function runCrawl() {
   const workers = Array.from({ length: CONCURRENCY }, worker);
   const t0 = Date.now();
   const timer = setInterval(() => {
-    const pct = rows.length ? Math.round((cursor / rows.length) * 100) : 100;
-    process.stdout.write(`\r  ${cursor}/${rows.length} (${pct}%) detectes=${stats.detected} robots=${stats.robots} erreurs=${stats.error}   `);
+    const pct = todo.length ? Math.round((cursor / todo.length) * 100) : 100;
+    process.stdout.write(`\r  domaines ${cursor}/${todo.length} (${pct}%) leads_detectes=${stats.detected} robots=${stats.robots} erreurs=${stats.error}   `);
   }, 1500);
 
   await Promise.all(workers);
   if (sink) await new Promise((r) => sink.end(r));
+  if (seen) await new Promise((r) => seen.end(r));
   clearInterval(timer);
-  process.stdout.write(`\r  ${rows.length}/${rows.length} termine en ${((Date.now() - t0) / 1000).toFixed(0)}s          \n`);
+  process.stdout.write(`\r  ${todo.length}/${todo.length} domaines termines en ${((Date.now() - t0) / 1000).toFixed(0)}s          \n`);
 
-  console.log(`  detectes     : ${stats.detected}`);
-  console.log(`  non concluants: ${stats.inconclusive}`);
-  console.log(`  bloques robots: ${stats.robots}`);
-  console.log(`  erreurs      : ${stats.error}`, errors);
-  if (!DRY) console.log(`  mis a jour   : ${updates.length}`);
+  console.log(`  leads detectes: ${stats.detected}`);
+  console.log(`  non concluants: ${stats.inconclusive} domaines`);
+  console.log(`  bloques robots: ${stats.robots} domaines`);
+  console.log(`  erreurs        : ${stats.error}`, errors);
+  if (!DRY) console.log(`  mis a jour     : ${updates.length}`);
 }
 
 /* --------------------------------- apply --------------------------------- */
