@@ -31,11 +31,32 @@ await Promise.all([
 await new Promise(r => setTimeout(r, 2500));
 
 for (const [route, name, full] of [
-  ['/phoning', 'phoning', false],
   ['/', 'dashboard', true],
+  ['/contacts', 'contacts', false],
 ]) {
   await page.goto(`${APP}${route}`, { waitUntil: 'networkidle2' });
   await shot(name, full);
 }
+
+// Measure the table instead of trusting the screenshot: the "Dernier appel"
+// column used to overlap itself once the columns were squeezed.
+const metrics = await page.evaluate(() => {
+  const table = document.querySelector('table');
+  const card = table?.closest('.overflow-x-auto');
+  const headers = [...(table?.querySelectorAll('thead th') ?? [])].map(th => ({
+    text: th.textContent.trim().slice(0, 14),
+    width: Math.round(th.getBoundingClientRect().width),
+  }));
+  const bars = [...document.querySelectorAll('.overflow-x-auto')]
+    .map(e => Math.round(e.scrollWidth - e.clientWidth));
+  return {
+    tableWidth: Math.round(table?.getBoundingClientRect().width ?? 0),
+    minWidth: table?.style.minWidth || null,
+    containerOverflowX: card ? Math.round(card.scrollWidth - card.clientWidth) : null,
+    headers,
+    otherScrollOverflow: bars,
+  };
+});
+console.log(JSON.stringify(metrics, null, 2));
 
 await browser.close();

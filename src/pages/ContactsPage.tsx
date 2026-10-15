@@ -610,6 +610,7 @@ export function ContactsPage() {
           {cities.map(c => <option key={c} value={c}>{c}</option>)}
         </Select>
         <Select
+          className="w-auto"
           value={hasReviewsFilter === 'all' ? 'all' : (minReviews || 'true')}
           onChange={(e) => { setActivePreset(null); const v = e.target.value; if (v === 'all') { setHasReviewsFilter('all'); setMinReviews(''); } else if (v === 'true') { setHasReviewsFilter('true'); setMinReviews(''); } else { setHasReviewsFilter('true'); setMinReviews(v); } setPage(1); }}
         >
