@@ -14,6 +14,7 @@ import { RadialProgress } from '../components/bits/RadialProgress';
 import { MicroBar } from '../components/bits/MicroBar';
 import { TrendDelta } from '../components/bits/TrendDelta';
 import { FunnelChart, FunnelStep } from '../components/bits/FunnelChart';
+import { ActionsPanel } from '../components/bits/ActionsPanel';
 import { CountUp } from '../components/bits/CountUp';
 import { TWEPerformanceChart } from '../components/bits/TWEPerformanceChart';
 import { useToast } from '../components/ui/toast';
@@ -89,13 +90,13 @@ export function DashboardPage() {
   const [funnelNote, setFunnelNote] = useState('');
   const [sources, setSources] = useState<any[]>([]);
   const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [actions, setActions] = useState<any>(null);
   const [friction, setFriction] = useState<any>(null);
   const [sourcesNote, setSourcesNote] = useState('');
   const [pipelineData, setPipelineData] = useState<PipelineData | null>(null);
   const [performance, setPerformance] = useState<PerformanceData[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [objections, setObjections] = useState<ObjectionBreakdown | null>(null);
-  const [dueCount, setDueCount] = useState({ total: 0, overdue: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -111,21 +112,22 @@ export function DashboardPage() {
       if (range.to) params.to = range.to;
     }
     try {
-      const [k, f, src, diag, p, perf, act, obj, due] = await Promise.all([
+      const [k, f, src, diag, acts, p, perf, act, obj] = await Promise.all([
         api.dashboard.kpis(params),
         api.dashboard.funnel(params),
         api.dashboard.sources(params),
         api.dashboard.diagnostics(params),
+        api.dashboard.actions(),
         api.dashboard.pipeline(),
         api.dashboard.performance(params),
         api.dashboard.activity(params),
         api.dashboard.objections(params),
-        api.calls.dueCount(),
       ]);
       setKpis(k);
       setFunnel(f.steps || []);
       setFriction(f.friction ?? null);
       setDiagnostics(diag ?? null);
+      setActions(acts ?? null);
       setFunnelNote(f.note || '');
       setSources(src.rows || []);
       setSourcesNote(src.note || '');
@@ -133,7 +135,6 @@ export function DashboardPage() {
       setPerformance(perf.performance || []);
       setActivity(act.activity || []);
       setObjections(obj);
-      setDueCount(due || { total: 0, overdue: 0 });
     } catch (err) {
       console.error('Dashboard load error:', err);
       toast('Impossible de charger le tableau de bord', 'error');
@@ -197,6 +198,12 @@ export function DashboardPage() {
         {kpis?.range && <p className="text-sm text-muted-foreground">{periodLabel}</p>}
       </motion.div>
 
+      {actions?.items?.length > 0 && (
+        <motion.div variants={item}>
+          <ActionsPanel items={actions.items} thresholds={actions.thresholds} />
+        </motion.div>
+      )}
+
       {/* NIVEAU 1 — métriques vitales */}
       <motion.section variants={item} aria-labelledby="niveau1">
         <h2 id="niveau1" className="sr-only">Métriques vitales</h2>
@@ -245,27 +252,6 @@ export function DashboardPage() {
         </div>
       </motion.section>
 
-      {dueCount.total > 0 && (
-        <motion.div variants={item}>
-          <Link
-            to="/followups"
-            className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/50"
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-destructive/10">
-              <BellRing className="h-5 w-5 text-destructive neon" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="font-medium">
-                {dueCount.total} relance{dueCount.total > 1 ? 's' : ''} à faire
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {dueCount.overdue > 0 ? `dont ${dueCount.overdue} en retard` : 'aucune en retard'}
-              </p>
-            </div>
-            <Button variant="outline" size="sm">Ouvrir</Button>
-          </Link>
-        </motion.div>
-      )}
 
       {/* NIVEAU 2 — entonnoir */}
       <motion.div variants={item}>

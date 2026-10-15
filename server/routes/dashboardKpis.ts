@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { contacts, calls, deals } from '../db/schema.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { resolveRange, previousRange, trend } from '../utils/dateRange.js';
+import { dueActions, HOT_PHONE_AFTER_DAYS, STALE_QUOTE_AFTER_DAYS } from '../utils/actions.js';
 
 /**
  * Reporting endpoints for the dashboard.
@@ -331,6 +332,38 @@ router.get('/diagnostics', authMiddleware, async (req: AuthRequest, res: Respons
     });
   } catch (error) {
     console.error('Dashboard diagnostics error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+/**
+ * Level 0 — what to do now. Grouped counts plus a short list per kind, so the
+ * dashboard opens on work rather than on aggregates.
+ */
+router.get('/actions', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const items = await dueActions(req);
+    const counts = items.reduce<Record<string, number>>((acc, i) => {
+      acc[i.kind] = (acc[i.kind] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    res.json({
+      total: items.length,
+      counts: {
+        followup: counts.followup ?? 0,
+        stale_quote: counts.stale_quote ?? 0,
+        cold_hot: counts.cold_hot ?? 0,
+      },
+      thresholds: {
+        staleQuoteAfterDays: STALE_QUOTE_AFTER_DAYS,
+        coldHotAfterDays: HOT_PHONE_AFTER_DAYS,
+      },
+      items,
+      note: 'Les relances ne remontent que si aucun appel plus récent n\'a eu lieu.',
+    });
+  } catch (error) {
+    console.error('Dashboard actions error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
