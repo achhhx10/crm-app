@@ -158,6 +158,10 @@ const CHECKS = [
   ['recommandations (statistiques)', '/referrals/stats'],
   // 403 acceptable : un commercial n'est pas admin.
   ['utilisateurs', '/auth/users', { expect: [200, 403] }],
+  // Must answer 404: the seeding routes are only mounted when DEV_SEED_TOKEN is
+  // set. If this ever fails, someone enabled demo seeding on production.
+  ['seed désactivé', '/dev/seed-demo', { expect: [404] }],
+  ['seed undo désactivé', '/dev/seed-demo/undo', { expect: [404] }],
 ];
 
 async function main() {

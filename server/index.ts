@@ -13,6 +13,7 @@ import dealsRoutes from './routes/deals.js';
 import referralsRoutes from './routes/referrals.js';
 import dashboardRoutes from './routes/dashboard.js';
 import dashboardKpiRoutes from './routes/dashboardKpis.js';
+import devSeedRoutes from './routes/devSeed.js';
 import importRoutes from './routes/import.js';
 import { dbReady, pool } from './db/index.js';
 
@@ -83,6 +84,9 @@ app.use('/api/dashboard', dashboardRoutes);
 // Additive reporting routes. Kept on a separate router so the existing
 // contracts the mobile PWA depends on stay untouched.
 app.use('/api/dashboard', dashboardKpiRoutes);
+// Answers 404 for every path unless DEV_SEED_TOKEN is set, which is not the case
+// in a normal deployment.
+app.use('/api/dev', devSeedRoutes);
 app.use('/api/import', importRoutes);
 
 // Serve frontend (same-origin mode; when the frontend is hosted separately

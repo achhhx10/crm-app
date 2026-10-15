@@ -19,7 +19,9 @@ import {
 } from 'drizzle-orm';
 import { resolveRange, previousRange, trend } from '../server/utils/dateRange.ts';
 import { CALL_RESULTS, OBJECTIONS, SITE_STATUSES, STAGES } from '../src/lib/utils.ts';
-import { CONTACTS, CALLS, DEALS, validateVocabulary } from './seed-demo.mjs';
+// Single source of truth, shared with the HTTP seed endpoint.
+import { CONTACTS, CALLS, DEALS } from '../server/demo/seedData.ts';
+import { validateVocabulary } from './seed-demo.mjs';
 
 // Deal statuses live inside DealsPage rather than lib/utils; kept inline here
 // rather than refactoring the page inside a data check.
