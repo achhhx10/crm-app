@@ -106,6 +106,15 @@ const CHECKS = [
   ['prospects (tri dernier appel)', '/contacts?limit=5&sortBy=lastCall&sortDir=desc'],
   ['prospects (recherche)', '/contacts?search=a&limit=5'],
   ['prospects (export)', '/contacts/export?dnc=exclude'],
+  ['prospects (hors archives)', '/contacts?archived=exclude&limit=5', {
+    shape: [{ path: 'contacts', type: 'array' }],
+  }],
+  ['prospects (archives)', '/contacts?archived=only&limit=5', {
+    shape: [{ path: 'contacts', type: 'array' }],
+  }],
+  // Archive remplace la suppression : aucune route DELETE ne doit exister.
+  ['prospects (suppression desactivee)', '/contacts/1', { expect: [404, 405] }],
+  ['prospects (suppression groupee desactivee)', '/contacts/bulk', { expect: [404, 405] }],
   ['prospects (listes)', '/contacts/activities'],
   ['villes', '/contacts/cities'],
   ['appels', '/calls?limit=5', { shape: [{ path: 'calls', type: 'array' }] }],

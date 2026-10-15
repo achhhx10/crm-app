@@ -36,6 +36,11 @@ export const contacts = pgTable('contacts', {
   // reputational risk (revDSG) and burns the contact for good.
   dnc: integer('dnc').default(0),
   dncReason: text('dnc_reason'),
+  // Archive instead of delete. contacts is the parent of calls, deals and
+  // referrals with ON DELETE CASCADE, so removing a prospect destroyed their
+  // whole history with no way back.
+  archivedAt: timestamp('archived_at'),
+  archivedBy: integer('archived_by').references(() => users.id, { onDelete: 'set null' }),
   // Language of the business, detected from legal form / vocabulary / city / website.
   // 'de' | 'fr' | 'it' | 'en' | null when undetermined.
   language: text('language'),

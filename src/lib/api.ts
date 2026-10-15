@@ -119,13 +119,16 @@ export const api = {
     get: (id: number) => request<any>(`/contacts/${id}`),
     create: (data: any) => request<any>('/contacts', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => request<any>(`/contacts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: number) => request<any>(`/contacts/${id}`, { method: 'DELETE' }),
     bulkStage: (ids: number[], stage: string) =>
       request<any>('/contacts/bulk-stage', { method: 'PUT', body: JSON.stringify({ ids, stage }) }),
     bulkAssign: (ids: number[], assignedTo: number | null) =>
       request<any>('/contacts/bulk-assign', { method: 'PUT', body: JSON.stringify({ ids, assignedTo }) }),
-    bulkDelete: (ids: number[]) =>
-      request<any>('/contacts/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
+    bulkArchive: (ids: number[]) =>
+      request<any>('/contacts/bulk-archive', { method: 'PUT', body: JSON.stringify({ ids }) }),
+    archive: (id: number) =>
+      request<any>(`/contacts/${id}/archive`, { method: 'POST' }),
+    restore: (id: number) =>
+      request<any>(`/contacts/${id}/restore`, { method: 'POST' }),
     exportCsv: (params?: Record<string, string>) => {
       const query = params ? '?' + new URLSearchParams(params).toString() : '';
       const token = getToken();

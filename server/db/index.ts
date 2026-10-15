@@ -135,6 +135,12 @@ async function initSchema() {
   ALTER TABLE contacts ADD COLUMN IF NOT EXISTS dnc INTEGER DEFAULT 0;
   ALTER TABLE contacts ADD COLUMN IF NOT EXISTS dnc_reason TEXT;
   CREATE INDEX IF NOT EXISTS idx_contacts_dnc ON contacts(dnc);
+
+  -- Archive replaces the cascade delete: the history of a prospect must not be
+  -- destroyed by a mis-click.
+  ALTER TABLE contacts ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP;
+  ALTER TABLE contacts ADD COLUMN IF NOT EXISTS archived_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  CREATE INDEX IF NOT EXISTS idx_contacts_archived ON contacts(archived_at);
   `);
 }
 

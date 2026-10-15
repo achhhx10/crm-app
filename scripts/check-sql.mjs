@@ -113,6 +113,11 @@ const QUERIES = {
   'actions: relances dues': () => raw(followUpsQuery(1, true)),
   'actions: devis sans reponse': () => raw(staleQuotesQuery(1, true)),
   'actions: chauds sans appel': () => raw(coldHotQuery(1, true)),
+  // Archive : filtre applique par defaut sur la liste des prospects.
+  'contacts: hors archives': () => db.select({ value: count() }).from(contacts)
+    .where(sql`${contacts.archivedAt} IS NULL`),
+  'contacts: archives seulement': () => db.select({ value: count() }).from(contacts)
+    .where(sql`${contacts.archivedAt} IS NOT NULL`),
   'sources: agrégat deals': () => db.select({
     source: contacts.source,
     quotes: count(),

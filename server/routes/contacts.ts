@@ -143,7 +143,7 @@ function pickAllowedFields(body: any, fields: string[]) {
 
 router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, called, language, dnc, sortBy, sortDir } = req.query;
+    const { search, stage, assignedTo, activity, minRating, hasSite, city, reach, minReviews, hasReviews, excludeCalled, called, language, dnc, archived, sortBy, sortDir } = req.query;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 50));
     const offset = (page - 1) * limit;
@@ -213,6 +213,14 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     } else if (language && typeof language === 'string' && language !== 'all') {
       conditions.push(eq(contacts.language, language));
     }
+    // Archived prospects are hidden by default. contacts is the parent of calls,
+    // deals and referrals with ON DELETE CASCADE, so deletion is not offered.
+    if (archived === 'only') {
+      conditions.push(sql`${contacts.archivedAt} IS NOT NULL`);
+    } else if (archived !== 'include') {
+      conditions.push(sql`${contacts.archivedAt} IS NULL`);
+    }
+
     // Opt-out. Default ('exclude') keeps flagged businesses out of every list;
     // 'only' shows just those, so they stay reachable for auditing.
     if (dnc === 'only') {
@@ -599,11 +607,15 @@ router.put('/:id', authMiddleware, validate(contactSchema.partial()), async (req
   }
 });
 
-router.delete('/bulk', authMiddleware, requireRole('admin'), async (_req, res) => {
+/**
+ * Bulk archive. The bulk delete removed rows outright, which cascaded into
+ * calls, deals and referrals: one mis-click destroyed a prospect's whole history.
+ */
+router.put('/bulk-archive', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
-    const { ids } = _req.body;
+    const { ids } = req.body;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      res.status(400).json({ error: 'ids (array) required' });
+      res.status(400).json({ error: 'ids (array) requis' });
       return;
     }
     const numericIds = [...new Set(ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0))];
@@ -611,24 +623,68 @@ router.delete('/bulk', authMiddleware, requireRole('admin'), async (_req, res) =
       res.status(400).json({ error: 'ids invalides' });
       return;
     }
-    const deleted = await db.delete(contacts).where(inArray(contacts.id, numericIds)).returning({ id: contacts.id });
-    res.json({ success: true, deleted: deleted.length });
+    const archived = await db.update(contacts)
+      .set({ archivedAt: new Date(), archivedBy: req.user!.userId, updatedAt: new Date() })
+      .where(and(inArray(contacts.id, numericIds), isNull(contacts.archivedAt)))
+      .returning({ id: contacts.id });
+    res.json({ success: true, archived: archived.length });
   } catch (error) {
-    console.error('Bulk delete error:', error);
+    console.error('Bulk archive error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-router.delete('/:id', authMiddleware, requireRole('admin'), async (_req, res) => {
+/**
+ * Archive, never delete.
+ *
+ * contacts is the parent of calls, deals and referrals with ON DELETE CASCADE,
+ * so deleting a prospect destroyed its whole history irreversibly. Archiving
+ * hides the lead everywhere while keeping every call, quote and referral, and
+ * can be undone.
+ */
+router.post('/:id/archive', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
-    const id = Number(_req.params.id);
-    const deleted = await db.delete(contacts).where(eq(contacts.id, id)).returning({ id: contacts.id });
-    if (deleted.length === 0) {
+    const id = Number(req.params.id);
+    const existing = (await db.select({ archivedAt: contacts.archivedAt })
+      .from(contacts).where(eq(contacts.id, id)))[0];
+    if (!existing) {
       res.status(404).json({ error: 'Prospect non trouvé' });
       return;
     }
+    if (existing.archivedAt) {
+      res.status(409).json({ error: 'Prospect déjà archivé' });
+      return;
+    }
+    const [row] = await db.update(contacts)
+      .set({ archivedAt: new Date(), archivedBy: req.user!.userId, updatedAt: new Date() })
+      .where(eq(contacts.id, id))
+      .returning({ id: contacts.id });
+    res.json({ success: true, archived: row });
+  } catch (error) {
+    console.error('Archive contact error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+router.post('/:id/restore', authMiddleware, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(_req.params.id);
+    const existing = (await db.select({ archivedAt: contacts.archivedAt })
+      .from(contacts).where(eq(contacts.id, id)))[0];
+    if (!existing) {
+      res.status(404).json({ error: 'Prospect non trouvé' });
+      return;
+    }
+    if (!existing.archivedAt) {
+      res.status(409).json({ error: 'Prospect non archivé' });
+      return;
+    }
+    await db.update(contacts)
+      .set({ archivedAt: null, archivedBy: null, updatedAt: new Date() })
+      .where(eq(contacts.id, id));
     res.json({ success: true });
   } catch (error) {
+    console.error('Restore contact error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

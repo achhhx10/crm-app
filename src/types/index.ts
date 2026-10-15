@@ -29,6 +29,8 @@ export interface Contact {
   /** 1 when the business asked not to be called again. */
   dnc?: number | null;
   dncReason?: string | null;
+  /** Set when the lead was archived instead of deleted; history is kept. */
+  archivedAt?: string | number | Date | null;
   /** Calling history for the viewer: last call date, its result, and how many. */
   lastCallAt?: string | number | Date | null;
   lastCallResult?: string | null;

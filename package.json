@@ -18,7 +18,9 @@
     "smoke": "node scripts/smoke.mjs",
     "check-sql": "tsx scripts/check-sql.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "check:ui": "tsx scripts/check-ui.mjs"
+    "check:ui": "tsx scripts/check-ui.mjs",
+    "backup:db": "node scripts/backup-postgres.mjs",
+    "restore:db": "node scripts/backup-postgres.mjs restore"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

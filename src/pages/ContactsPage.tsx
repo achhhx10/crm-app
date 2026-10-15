@@ -8,7 +8,7 @@ import { Segmented } from '../components/ui/segmented';
 import { Card, CardContent } from '../components/ui/card';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
-import { Plus, Search, Phone, Edit, Eye, EyeOff, ChevronUp, ChevronDown, Download, Trash2, ArrowUpDown, X, Globe, GlobeLock, Flame, Gem, RefreshCw, Ban, MapPinOff, Star } from 'lucide-react';
+import { Plus, Search, Phone, Edit, Eye, EyeOff, ChevronUp, ChevronDown, Download, Trash2, Archive, ArrowUpDown, X, Globe, GlobeLock, Flame, Gem, RefreshCw, Ban, MapPinOff, Star } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { STAGES, CALL_RESULTS, OBJECTIONS, LANGUAGES, formatDate, opportunityScore, opportunityMeta } from '../lib/utils';
 import type { Contact } from '../types';
@@ -155,6 +155,7 @@ export function ContactsPage() {
   const activePreset = searchParams.get('preset');
   const dncFilterUrl = urlStr('dnc', 'exclude');
   const calledFilter = urlStr('called', 'all');
+  const archivedFilter = urlStr('archived', 'exclude');
   const assigneeFilterUrl = urlStr('assignedTo', 'all');
 
   // Any filter change resets to page 1; a page change keeps the filters.
@@ -177,6 +178,7 @@ export function ContactsPage() {
   const setActivePreset = setFilter('preset');
   const setDncFilter = setFilter('dnc');
   const setCalledFilter = setFilter('called');
+  const setArchivedFilter = setFilter('archived');
   const setAssigneeFilter = setFilter('assignedTo');
   const [activities, setActivities] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
@@ -216,7 +218,7 @@ export function ContactsPage() {
 
   useEffect(() => {
     loadContacts();
-  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, dncFilter, calledFilter, assigneeFilter, sortField, sortDir]);
+  }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, dncFilter, calledFilter, archivedFilter, assigneeFilter, sortField, sortDir]);
 
   useEffect(() => {
     api.contacts.activities().then(setActivities).catch(() => {});
@@ -249,7 +251,9 @@ export function ContactsPage() {
       if (cityFilter !== 'all') params.city = cityFilter;
       if (languageFilter !== 'all') params.language = languageFilter;
       params.dnc = dncFilter;
-      if (calledFilter === 'never') params.excludeCalled = 'true';
+      params.archived = archivedFilter;
+      params.archived = archivedFilter;
+    if (calledFilter === 'never') params.excludeCalled = 'true';
       else if (calledFilter === 'already') params.called = 'only';
       if (assigneeFilter !== 'all') params.assignedTo = assigneeFilter;
       if (reachFilter !== 'all') params.reach = reachFilter;
@@ -360,14 +364,17 @@ export function ContactsPage() {
     }
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkArchive = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`Supprimer ${selectedIds.size} prospects ?`)) return;
+    if (!confirm(
+      `Archiver ${selectedIds.size} prospects ?\n\nIls disparaîtront des listes. Appels, devis et recommandations seront conservés et restaurables.`,
+    )) return;
     try {
-      await api.contacts.bulkDelete([...selectedIds]);
+      const res = await api.contacts.bulkArchive([...selectedIds]);
       setSelectedIds(new Set());
       loadContacts();
-    } catch (err) { toast('Erreur lors de la suppression', 'error'); }
+      toast(`${res?.archived ?? selectedIds.size} prospect(s) archivé(s)`, 'success');
+    } catch (err) { toast('Erreur lors de l\'archivage', 'error'); }
   };
 
   const handleExport = async () => {
@@ -386,6 +393,7 @@ export function ContactsPage() {
     if (cityFilter !== 'all') params.city = cityFilter;
     if (languageFilter !== 'all') params.language = languageFilter;
     params.dnc = dncFilter;
+    params.archived = archivedFilter;
     if (calledFilter === 'never') params.excludeCalled = 'true';
     else if (calledFilter === 'already') params.called = 'only';
     if (assigneeFilter !== 'all') params.assignedTo = assigneeFilter;
@@ -462,9 +470,25 @@ export function ContactsPage() {
     setShowForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Supprimer ce prospect ?')) return;
-    try { await api.contacts.delete(id); loadContacts(); toast('Prospect supprimé', 'success'); } catch (err) { toast('Erreur lors de la suppression', 'error'); }
+  const handleArchive = async (id: number) => {
+    if (!confirm('Archiver ce prospect ?\n\nIl disparaîtra des listes, mais ses appels, devis et recommandations seront conservés.')) return;
+    try {
+      await api.contacts.archive(id);
+      loadContacts();
+      toast('Prospect archivé', 'success');
+    } catch (err) {
+      toast('Erreur lors de l\'archivage', 'error');
+    }
+  };
+
+  const handleRestore = async (id: number) => {
+    try {
+      await api.contacts.restore(id);
+      loadContacts();
+      toast('Prospect restauré', 'success');
+    } catch (err) {
+      toast('Erreur lors de la restauration', 'error');
+    }
   };
 
   const resetForm = () => {
@@ -548,6 +572,12 @@ export function ContactsPage() {
             {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
           </Select>
         ) : null}
+        <Select value={archivedFilter} onChange={(e) => { setActivePreset(null); setArchivedFilter(e.target.value); setPage(1); }}
+          aria-label="Filtrer les prospects archivés">
+          <option value="exclude">Hors archives</option>
+          <option value="only">Archives uniquement</option>
+          <option value="include">Tous</option>
+        </Select>
         <Select value={calledFilter} onChange={(e) => { setActivePreset(null); setCalledFilter(e.target.value); setPage(1); }}
           aria-label="Filtrer par historique d'appel">
           <option value="all">Tous les prospects</option>
@@ -619,8 +649,8 @@ export function ContactsPage() {
               </>
             )}
             {isAdmin && (
-              <Button size="sm" variant="destructive" onClick={handleBulkDelete}>
-                <Trash2 className="h-3 w-3 mr-1" /> Supprimer
+              <Button size="sm" variant="outline" onClick={handleBulkArchive}>
+                <Archive className="h-3 w-3 mr-1" /> Archiver
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
@@ -753,10 +783,21 @@ export function ContactsPage() {
                           {isHidden ? <Eye className="h-3.5 w-3.5 text-muted-foreground" /> : <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />}
                         </Button>
                         {isAdmin && (
-                          <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" aria-label="Supprimer le prospect"
-                            onClick={() => handleDelete(contact.id)}>
-                            <span className="text-destructive text-xs">✕</span>
-                          </Button>
+                          contact.archivedAt ? (
+                            <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7"
+                              aria-label="Restaurer le prospect"
+                              title="Restaurer ce prospect"
+                              onClick={() => handleRestore(contact.id)}>
+                              <span className="text-success text-xs">↩</span>
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7"
+                              aria-label="Archiver le prospect"
+                              title="Archiver (l'historique est conservé)"
+                              onClick={() => handleArchive(contact.id)}>
+                              <Archive className="h-3.5 w-3.5 text-muted-foreground" />
+                            </Button>
+                          )
                         )}
                       </div>
                     </td>
