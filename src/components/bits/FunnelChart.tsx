@@ -48,7 +48,7 @@ export function FunnelChart({ steps, note }: FunnelChartProps) {
                         reads as "nobody", so anything under 1 % is shown as such. */}
                     {step.conversionFromPrevious > 0 && step.conversionFromPrevious < 1
                       ? '<1 %'
-                      : `${step.conversionFromPrevious} %`}{' '}
+                      : `${Math.round(step.conversionFromPrevious)} %`}{' '}
                     des {steps[index - 1].label.toLowerCase()}
                   </span>
                 ) : (

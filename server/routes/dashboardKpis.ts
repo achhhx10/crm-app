@@ -159,8 +159,10 @@ router.get('/funnel', authMiddleware, async (req: AuthRequest, res: Response) =>
       const previous = index > 0 ? stages[index - 1].value : null;
       return {
         ...stage,
+        // Left unrounded on purpose: 4 contacted out of 39,254 is 0.01%, and
+        // rounding it to 0% reads as "nobody". The client formats it.
         conversionFromPrevious: previous && previous > 0
-          ? Math.round((stage.value / previous) * 100)
+          ? (stage.value / previous) * 100
           : null,
       };
     });

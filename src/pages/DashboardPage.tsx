@@ -288,7 +288,9 @@ export function DashboardPage() {
                       <AlertTriangle className="h-3.5 w-3.5" /> Point de fuite
                     </p>
                     <p className="mt-1 text-sm">
-                      {friction.conversion > 0 && friction.conversion < 1 ? '<1 %' : `${friction.conversion} %`}
+                      {friction.conversion > 0 && friction.conversion < 1
+                        ? '<1 %'
+                        : `${Math.round(friction.conversion)} %`}
                       <span className="text-muted-foreground"> arrive à {friction.label.toLowerCase()}</span>
                     </p>
                   </div>
