@@ -18,7 +18,7 @@ const API = (process.env.API_URL || 'https://crm-app-production-9a59.up.railway.
 
 let token = process.env.CRM_TOKEN || '';
 
-async function check(label, path, { expect = [200] } = {}) {
+async function check(label, path, { expect = [200], shape } = {}) {
   const url = `${API}${path}`;
   let status = 0;
   let body = '';
@@ -41,6 +41,29 @@ async function check(label, path, { expect = [200] } = {}) {
   if (!expect.includes(status)) {
     console.error(`  ✗ ${label}\n      ${path}\n      HTTP ${status} (attendu ${expect.join('/')})`);
     return false;
+  }
+  // Shape assertions catch the other half of the outage class: a 200 whose body
+  // no longer matches what a client reads. The mobile dashboard broke exactly
+  // that way when /dashboard/activity started answering an envelope.
+  if (shape) {
+    let parsed;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      console.error(`  ✗ ${label}\n      ${path}\n      corps non JSON`);
+      return false;
+    }
+    for (const probe of shape) {
+      let value = parsed;
+      for (const key of probe.path.split('.')) value = value?.[key];
+      const kind = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
+      if (kind !== probe.type) {
+        console.error(
+          `  ✗ ${label}\n      ${path}\n      ${probe.path} devrait être ${probe.type}, reçu ${kind}`,
+        );
+        return false;
+      }
+    }
   }
   console.log(`  ✓ ${label} [${status}]`);
   return true;
@@ -71,7 +94,12 @@ const CHECKS = [
   ['santé', '/health'],
   // La liste de prospects porte l'enrichissement d'historique d'appel : c'est
   // la route qui est tombée en 500 quand la requête ANY() était cassée.
-  ['prospects (défaut)', '/contacts?limit=5'],
+  ['prospects (défaut)', '/contacts?limit=5', {
+    shape: [
+      { path: 'contacts', type: 'array' },
+      { path: 'total', type: 'number' },
+    ],
+  }],
   ['prospects (jamais appelés)', '/contacts?called=never&limit=5'],
   ['prospects (déjà appelés)', '/contacts?called=only&limit=5'],
   ['prospects (file phoning)', '/contacts?excludeCalled=true&limit=5&sortBy=opportunity&sortDir=desc'],
@@ -80,15 +108,31 @@ const CHECKS = [
   ['prospects (export)', '/contacts/export?dnc=exclude'],
   ['prospects (listes)', '/contacts/activities'],
   ['villes', '/contacts/cities'],
-  ['appels', '/calls?limit=5'],
+  ['appels', '/calls?limit=5', { shape: [{ path: 'calls', type: 'array' }] }],
+  ['appels (par contact)', '/calls/contact/1', { shape: [] }],
   ['appels (statistiques)', '/calls/stats'],
   ['appels (relances dues)', '/calls/due'],
   ['appels (compteur relances)', '/calls/due-count'],
-  ['tableau de bord (résumé)', '/dashboard/summary'],
+  ['tableau de bord (résumé)', '/dashboard/summary', {
+    shape: [
+      { path: 'range.label', type: 'string' },
+      { path: 'calls.total', type: 'number' },
+      { path: 'calls.connectionRate', type: 'number' },
+      { path: 'deals.revenue', type: 'number' },
+      { path: 'contacts.total', type: 'number' },
+    ],
+  }],
   ['tableau de bord (période)', '/dashboard/summary?from=2026-01-01&to=2026-12-31'],
-  ['tableau de bord (pipeline)', '/dashboard/pipeline'],
-  ['tableau de bord (performance)', '/dashboard/performance'],
-  ['tableau de bord (activité)', '/dashboard/activity'],
+  ['tableau de bord (pipeline)', '/dashboard/pipeline', {
+    shape: [{ path: 'funnel', type: 'array' }, { path: 'pipeline', type: 'object' }],
+  }],
+  ['tableau de bord (performance)', '/dashboard/performance', {
+    shape: [{ path: 'performance', type: 'array' }],
+  }],
+  // Envelope: the mobile client calls activity.slice(0, 8) on this.
+  ['tableau de bord (activité)', '/dashboard/activity', {
+    shape: [{ path: 'activity', type: 'array' }],
+  }],
   ['tableau de bord (objections)', '/dashboard/objections'],
   ['deals', '/deals?limit=5'],
   ['deals (statistiques)', '/deals/stats'],

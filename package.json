@@ -15,7 +15,9 @@
     "start": "tsx server/index.ts",
     "seed": "tsx --env-file=.env server/seed.ts",
     "backup": "bash scripts/backup.sh",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "check-sql": "tsx scripts/check-sql.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

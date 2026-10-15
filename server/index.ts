@@ -12,6 +12,7 @@ import callsRoutes from './routes/calls.js';
 import dealsRoutes from './routes/deals.js';
 import referralsRoutes from './routes/referrals.js';
 import dashboardRoutes from './routes/dashboard.js';
+import dashboardKpiRoutes from './routes/dashboardKpis.js';
 import importRoutes from './routes/import.js';
 import { dbReady, pool } from './db/index.js';
 
@@ -79,6 +80,9 @@ app.use('/api/calls', callsRoutes);
 app.use('/api/deals', dealsRoutes);
 app.use('/api/referrals', referralsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+// Additive reporting routes. Kept on a separate router so the existing
+// contracts the mobile PWA depends on stay untouched.
+app.use('/api/dashboard', dashboardKpiRoutes);
 app.use('/api/import', importRoutes);
 
 // Serve frontend (same-origin mode; when the frontend is hosted separately

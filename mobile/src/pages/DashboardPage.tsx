@@ -14,7 +14,9 @@ export function DashboardPage() {
   useEffect(() => {
     Promise.all([
       api.dashboard.summary().then(setSummary).catch(() => {}),
-      api.dashboard.activity().then(setActivity).catch(() => {}),
+      // GET /dashboard/activity answers { range, activity }; it used to answer a
+      // bare array, and storing the envelope made activity.slice() throw at render.
+      api.dashboard.activity().then((res: any) => setActivity(res?.activity ?? [])).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
 

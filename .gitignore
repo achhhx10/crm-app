@@ -10,3 +10,4 @@ backups/
 !.env.example
 *.log
 .DS_Store
+.demo-seed.json

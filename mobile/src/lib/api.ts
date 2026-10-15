@@ -97,9 +97,11 @@ export const api = {
     update: (id: number, data: any) => request<any>(`/referrals/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   },
   dashboard: {
+    // All three answers are envelopes: { range, ... }. Declared as any[] once,
+    // which is what let the activity reshape pass review unnoticed.
     summary: () => request<any>('/dashboard/summary'),
     pipeline: () => request<any>('/dashboard/pipeline'),
-    performance: () => request<any[]>('/dashboard/performance'),
+    performance: () => request<any>('/dashboard/performance'),
     activity: () => request<any[]>('/dashboard/activity'),
   },
 };

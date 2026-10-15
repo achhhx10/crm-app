@@ -66,3 +66,31 @@ export function resolveRange(query: Record<string, unknown>, now = new Date()): 
     label: `${toISODate(from)} → ${toISODate(to)}`,
   };
 }
+
+/**
+ * The period immediately before `range`, of the same length. Comparing a month
+ * to "the last 30 days" is how the dashboard ended up labelling a rolling
+ * window as "ce mois" in the first place.
+ */
+export function previousRange(range: ReportRange): ReportRange {
+  const to = new Date(range.from.getTime() - 1);
+  const from = new Date(to.getTime() - (range.days - 1) * 86400000);
+  return {
+    from,
+    to,
+    fromISO: toISODate(from),
+    toISO: toISODate(to),
+    days: range.days,
+    label: `${toISODate(from)} → ${toISODate(to)}`,
+  };
+}
+
+/**
+ * Percentage change between two values, or null when there is no baseline.
+ * A growth out of zero is not an infinite percentage, so it is reported as null
+ * rather than a fabricated number.
+ */
+export function trend(current: number, previous: number): number | null {
+  if (!previous) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}
