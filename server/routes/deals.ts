@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
-import { deals } from '../db/schema.js';
+import { deals, contacts } from '../db/schema.js';
 import { eq, desc, sql, count } from 'drizzle-orm';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -29,12 +29,29 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 20));
     const offset = (page - 1) * limit;
 
+    // LEFT JOIN so the client never has to resolve names from a capped contact list.
+    const dealColumns = {
+      id: deals.id,
+      contactId: deals.contactId,
+      amount: deals.amount,
+      siteType: deals.siteType,
+      status: deals.status,
+      assignedTo: deals.assignedTo,
+      createdAt: deals.createdAt,
+      signedAt: deals.signedAt,
+      contactName: contacts.businessName,
+      contactCity: contacts.city,
+    };
+
     let allDeals, totalResult;
     if (isAdmin(req)) {
-      allDeals = await db.select().from(deals).orderBy(desc(deals.createdAt)).limit(limit).offset(offset);
+      allDeals = await db.select(dealColumns).from(deals)
+        .leftJoin(contacts, eq(deals.contactId, contacts.id))
+        .orderBy(desc(deals.createdAt)).limit(limit).offset(offset);
       totalResult = (await db.select({ value: count() }).from(deals))[0]?.value ?? 0;
     } else {
-      allDeals = await db.select().from(deals)
+      allDeals = await db.select(dealColumns).from(deals)
+        .leftJoin(contacts, eq(deals.contactId, contacts.id))
         .where(eq(deals.assignedTo, req.user!.userId))
         .orderBy(desc(deals.createdAt)).limit(limit).offset(offset);
       totalResult = (await db.select({ value: count() }).from(deals).where(eq(deals.assignedTo, req.user!.userId)))[0]?.value ?? 0;

@@ -27,6 +27,49 @@ const contactSchema = z.object({
 
 const VALID_STAGES = ['identifie', 'contacte', 'interesse', 'rdv_programme', 'proposition_envoyee', 'signe', 'perdu'];
 
+/** Escape LIKE wildcards so a search for "100%" does not match everything. */
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, ch => '\\' + ch);
+}
+
+/** Digits only, so "022 123 45 67" can match a stored "+41 22 123 45 67". */
+function digitsOnly(term: string): string {
+  return term.replace(/\D/g, '');
+}
+
+const digitsPhone = sql`regexp_replace(coalesce(${contacts.phone}, ''), '[^0-9]', '', 'g')`;
+
+/**
+ * Single definition of "search", shared by the list and export routes so the two
+ * can never drift apart. Covers the fields a rep actually recalls a lead by:
+ * name, contact, city, trade, phone, email, notes, objection and website.
+ */
+function searchCondition(search: string) {
+  const like = `%${escapeLike(search)}%`;
+  const cols = [
+    contacts.businessName,
+    contacts.contactName,
+    contacts.city,
+    contacts.activity,
+    contacts.email,
+    contacts.notes,
+    contacts.objection,
+    contacts.siteUrl,
+  ];
+  const textMatches = cols.map(col => sql`${col} ILIKE ${like} ESCAPE '\\'`);
+
+  const digits = digitsOnly(search);
+  if (digits.length >= 4) {
+    textMatches.push(sql`${digitsPhone} LIKE ${'%' + digits} '%'} ESCAPE '\\'`);
+    // National significant number: search "22312345" against "+41221234567".
+    if (digits.length >= 6) {
+      textMatches.push(sql`right(${digitsPhone}, ${digits.length}) = ${digits}`);
+    }
+  }
+
+  return sql`(${sql.join(textMatches.map(m => sql`(${m})`), sql` OR `)})`;
+}
+
 const router = Router();
 
 function isAdmin(req: AuthRequest): boolean {
@@ -68,17 +111,15 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     }
 
     if (search && typeof search === 'string') {
-      conditions.push(
-        sql`(${contacts.businessName} LIKE ${'%' + search + '%'} OR ${contacts.contactName} LIKE ${'%' + search + '%'} OR ${contacts.city} LIKE ${'%' + search + '%'} OR ${contacts.activity} LIKE ${'%' + search + '%'})`
-      );
+      conditions.push(searchCondition(search));
     }
-    if (stage && typeof stage === 'string') {
+    if (stage && typeof stage === 'string' && stage !== 'all') {
       conditions.push(eq(contacts.stage, stage));
     }
     if (assignedTo && typeof assignedTo === 'string') {
       conditions.push(eq(contacts.assignedTo, Number(assignedTo)));
     }
-    if (activity && typeof activity === 'string') {
+    if (activity && typeof activity === 'string' && activity !== 'all') {
       conditions.push(eq(contacts.activity, activity));
     }
     if (minRating && typeof minRating === 'string') {
@@ -100,7 +141,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     }
     if (city === '__empty__') {
       conditions.push(sql`(${contacts.city} IS NULL OR ${contacts.city} = '')`);
-    } else if (city && typeof city === 'string') {
+    } else if (city && typeof city === 'string' && city !== 'all') {
       conditions.push(eq(contacts.city, city));
     }
     if (minReviews && typeof minReviews === 'string') {
@@ -112,7 +153,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     // Language filter: 'de'/'fr'/'it'/'en', or '__empty__' for undetermined.
     if (language === '__empty__') {
       conditions.push(isNull(contacts.language));
-    } else if (language && typeof language === 'string') {
+    } else if (language && typeof language === 'string' && language !== 'all') {
       conditions.push(eq(contacts.language, language));
     }
     // Phoning queue: hide leads already called (by anyone for admins, by the caller otherwise).
@@ -218,11 +259,9 @@ router.get('/export', authMiddleware, async (req: AuthRequest, res: Response) =>
     }
 
     if (search && typeof search === 'string') {
-      conditions.push(
-        sql`(${contacts.businessName} LIKE ${'%' + search + '%'} OR ${contacts.contactName} LIKE ${'%' + search + '%'} OR ${contacts.city} LIKE ${'%' + search + '%'} OR ${contacts.activity} LIKE ${'%' + search + '%'})`
-      );
+      conditions.push(searchCondition(search));
     }
-    if (stage && typeof stage === 'string') conditions.push(eq(contacts.stage, stage));
+    if (stage && typeof stage === 'string' && stage !== 'all') conditions.push(eq(contacts.stage, stage));
     if (activity && typeof activity === 'string') conditions.push(eq(contacts.activity, activity));
     if (minRating && typeof minRating === 'string') conditions.push(sql`${contacts.googleRating} >= ${Number(minRating)}`);
     if (hasSite && typeof hasSite === 'string' && hasSite !== 'all') conditions.push(hasSite === 'pas_de_site' ? inArray(contacts.hasSite, ['pas_de_site', 'non']) : eq(contacts.hasSite, hasSite));

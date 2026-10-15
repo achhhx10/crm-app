@@ -16,31 +16,44 @@ interface PipelineContact {
 }
 
 const stageOrder = ['identifie', 'contacte', 'interesse', 'rdv_programme', 'proposition_envoyee', 'signe', 'perdu'];
+const TERMINAL_STAGES = ['signe', 'perdu'];
+const COLUMNS_SHOWN = ['identifie', 'contacte', 'interesse', 'rdv_programme', 'proposition_envoyee'];
+const MAX_CARDS_PER_COLUMN = 50;
 
 export function PipelinePage() {
   const [pipelineData, setPipelineData] = useState<Record<string, PipelineContact[]>>({});
   const [loading, setLoading] = useState(true);
   const [draggedContact, setDraggedContact] = useState<PipelineContact | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const [includeTerminal, setIncludeTerminal] = useState(false);
+  const [total, setTotal] = useState(0);
   const { toast } = useToast();
 
   useEffect(() => {
     loadPipeline();
-  }, []);
+  }, [includeTerminal]);
 
   const loadPipeline = async () => {
+    setLoading(true);
     try {
-      const { contacts } = await api.contacts.list({ stage: 'all', limit: '1000' });
+      // No stage filter: 'all' must never reach the server (it would be read as a literal stage).
+      // The API caps a page at 500 rows, so the board is scoped and any remainder is disclosed.
+      const { contacts, total: matched } = await api.contacts.list({ limit: '500' });
+      const scoped = includeTerminal
+        ? contacts
+        : contacts.filter((c: PipelineContact) => !TERMINAL_STAGES.includes(c.stage || ''));
       const grouped: Record<string, PipelineContact[]> = {};
       stageOrder.forEach(s => grouped[s] = []);
-      contacts.forEach((c: PipelineContact) => {
+      scoped.forEach((c: PipelineContact) => {
         const stage = c.stage || 'identifie';
         if (!grouped[stage]) grouped[stage] = [];
         grouped[stage].push(c);
       });
       setPipelineData(grouped);
+      setTotal(matched || scoped.length);
     } catch (err) {
       console.error('Pipeline load error:', err);
+      toast('Erreur : impossible de charger le pipeline', 'error');
     } finally {
       setLoading(false);
     }
@@ -135,10 +148,46 @@ export function PipelinePage() {
     );
   }
 
+  const visibleCount = Object.values(pipelineData).reduce((sum, cols) => sum + cols.length, 0);
+  const hiddenTerminal = total - visibleCount;
+  const hiddenColumns = COLUMNS_SHOWN.filter((s) => (pipelineData[s] || []).length === 0 && total > 0);
+
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="flex min-h-[44px] items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={includeTerminal}
+            onChange={(e) => setIncludeTerminal(e.target.checked)}
+            className="h-4 w-4 rounded border-input"
+          />
+          Inclure les prospects signés et perdus
+        </label>
+        <p className="text-sm text-muted-foreground">
+          {visibleCount} affiché{visibleCount > 1 ? 's' : ''} sur {total} prospect{total > 1 ? 's' : ''}
+        </p>
+      </div>
+      {!includeTerminal && hiddenTerminal > 0 && (
+        <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          {hiddenTerminal} prospect{hiddenTerminal > 1 ? 's' : ''} signé{hiddenTerminal > 1 ? 's' : ''} ou perdu{hiddenTerminal > 1 ? 's' : ''}
+          {hiddenTerminal > 1 ? ' sont' : ' est'} masqué{hiddenTerminal > 1 ? 's' : ''} — cochez la case ci-dessus pour les inclure.
+        </p>
+      )}
+      {total > visibleCount && includeTerminal && (
+        <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          Seuls les {visibleCount} premiers prospects sont chargés par ce tableau. Pour travailler sur une
+          liste précise, utilisez la page Prospects avec des filtres.
+        </p>
+      )}
+      {loading ? (
+        <p className="text-muted-foreground animate-pulse">Chargement du pipeline…</p>
+      ) : visibleCount === 0 && hiddenColumns.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Aucun prospect à afficher.</p>
+      ) : null}
       <div className="flex gap-4 overflow-x-auto pb-4">
         {stageOrder.map((stage) => {
+          if (!includeTerminal && TERMINAL_STAGES.includes(stage)) return null;
           const stageInfo = STAGES[stage];
           const contacts = pipelineData[stage] || [];
           const isDragOver = dragOverStage === stage;
@@ -163,7 +212,7 @@ export function PipelinePage() {
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                    {contacts.map((contact) => (
+                    {contacts.slice(0, MAX_CARDS_PER_COLUMN).map((contact) => (
                       <Link
                         key={contact.id}
                         to={`/contacts/${contact.id}`}
@@ -217,6 +266,15 @@ export function PipelinePage() {
                       <p className="text-xs text-muted-foreground text-center py-4">
                         Aucun prospect
                       </p>
+                    )}
+                    {contacts.length > MAX_CARDS_PER_COLUMN && (
+                      <Link
+                        to="/contacts"
+                        className="block rounded-lg border border-dashed border-border px-3 py-2 text-center text-xs text-muted-foreground hover:bg-muted"
+                      >
+                        + {contacts.length - MAX_CARDS_PER_COLUMN} autre{contacts.length - MAX_CARDS_PER_COLUMN > 1 ? 's' : ''}
+                        {' '}dans cette étape — voir dans Prospects
+                      </Link>
                     )}
                   </div>
                 </CardContent>

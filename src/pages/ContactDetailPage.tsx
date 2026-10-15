@@ -175,6 +175,7 @@ export function ContactDetailPage() {
                 <TableHead>Durée</TableHead>
                 <TableHead>Objection</TableHead>
                 <TableHead>Notes</TableHead>
+                <TableHead>Relance</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -189,11 +190,26 @@ export function ContactDetailPage() {
                   <TableCell>{formatDuration(call.duration)}</TableCell>
                   <TableCell>{call.objection ? OBJECTIONS[call.objection] || call.objection : '-'}</TableCell>
                   <TableCell className="max-w-[200px] truncate">{call.notes || '-'}</TableCell>
+                  <TableCell>
+                    {call.nextStep ? (
+                      <div className="flex flex-col gap-0.5">
+                        {call.nextStepAt && (
+                          <span className="text-xs font-medium">
+                            {formatDate(call.nextStepAt)}
+                            {new Date(call.nextStepAt).getTime() < Date.now() && (
+                              <span className="text-destructive"> · en retard</span>
+                            )}
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground">{call.nextStep}</span>
+                      </div>
+                    ) : '-'}
+                  </TableCell>
                 </TableRow>
               ))}
               {calls.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     Aucun appel enregistré
                   </TableCell>
                 </TableRow>

@@ -5,9 +5,29 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatDate(timestamp: number | null): string {
-  if (!timestamp) return '-';
-  const date = new Date(timestamp * 1000);
+/**
+ * The API serialises Postgres timestamps as ISO strings, while some legacy rows
+ * and payloads use epoch seconds. Accept both so dates never render as
+ * "Invalid Date".
+ */
+type DateLike = number | string | Date | null | undefined;
+
+function toDate(value: DateLike): Date | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'number') {
+    // Heuristic: values below ~1e11 are epoch seconds, above are milliseconds.
+    const ms = value < 1e11 ? value * 1000 : value;
+    const date = new Date(ms);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function formatDate(value: DateLike): string {
+  const date = toDate(value);
+  if (!date) return '-';
   return date.toLocaleDateString('fr-FR', {
     day: '2-digit',
     month: '2-digit',
@@ -15,9 +35,9 @@ export function formatDate(timestamp: number | null): string {
   });
 }
 
-export function formatDateTime(timestamp: number | null): string {
-  if (!timestamp) return '-';
-  const date = new Date(timestamp * 1000);
+export function formatDateTime(value: DateLike): string {
+  const date = toDate(value);
+  if (!date) return '-';
   return date.toLocaleDateString('fr-FR', {
     day: '2-digit',
     month: '2-digit',

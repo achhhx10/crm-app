@@ -10,7 +10,7 @@ import { Input } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { CALL_RESULTS, OBJECTIONS, STAGES, LANGUAGES, formatDateTime, formatDuration } from '../lib/utils';
+import { CALL_RESULTS, OBJECTIONS, STAGES, LANGUAGES, formatDate, formatDateTime, formatDuration } from '../lib/utils';
 import type { Contact, Call } from '../types';
 
 const PAGE_SIZE = 500;
@@ -58,7 +58,7 @@ export function PhoningPage() {
   const [hasMore, setHasMore] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({ result: '', objection: '', notes: '', nextStep: '' });
+  const [form, setForm] = useState({ result: '', objection: '', notes: '', nextStep: '', nextStepAt: '' });
   const [history, setHistory] = useState<Call[]>([]);
   const [elapsed, setElapsed] = useState(0);
 
@@ -162,7 +162,7 @@ export function PhoningPage() {
     setElapsed(0);
 
     // restore draft for this lead
-    let draft = { result: '', objection: '', notes: '', nextStep: '' };
+    let draft = { result: '', objection: '', notes: '', nextStep: '', nextStepAt: '' };
     try {
       const raw = localStorage.getItem(DRAFT_PREFIX + current.id);
       if (raw) draft = { ...draft, ...JSON.parse(raw) };
@@ -178,7 +178,7 @@ export function PhoningPage() {
   useEffect(() => {
     if (!current) return;
     try {
-      const empty = !form.result && !form.objection && !form.notes && !form.nextStep;
+      const empty = !form.result && !form.objection && !form.notes && !form.nextStep && !form.nextStepAt;
       if (empty) localStorage.removeItem(DRAFT_PREFIX + current.id);
       else localStorage.setItem(DRAFT_PREFIX + current.id, JSON.stringify(form));
     } catch { /* ignore */ }
@@ -237,11 +237,12 @@ export function PhoningPage() {
         objection: form.objection || undefined,
         notes: form.notes || undefined,
         nextStep: form.nextStep || undefined,
+        nextStepAt: form.nextStepAt || undefined,
       });
       try { localStorage.removeItem(DRAFT_PREFIX + current.id); } catch { /* ignore */ }
       setDone(prev => new Set(prev).add(current.id));
-      setForm({ result: '', objection: '', notes: '', nextStep: '' });
-      setHistory(prev => [{ id: -Date.now(), contactId: current.id, userId: null, date: Math.floor(Date.now() / 1000), duration: elapsed, result: form.result, objection: form.objection || null, notes: form.notes || null, nextStep: form.nextStep || null }, ...prev]);
+      setForm({ result: '', objection: '', notes: '', nextStep: '', nextStepAt: '' });
+      setHistory(prev => [{ id: -Date.now(), contactId: current.id, userId: null, date: Math.floor(Date.now() / 1000), duration: elapsed, result: form.result, objection: form.objection || null, notes: form.notes || null, nextStep: form.nextStep || null, nextStepAt: form.nextStepAt || null }, ...prev]);
       toast('Appel enregistré', 'success');
       goNext();
     } catch (err) {
@@ -422,6 +423,12 @@ export function PhoningPage() {
                         </Badge>
                         <span className="text-muted-foreground shrink-0">{formatDateTime(c.date)}</span>
                         {c.notes && <span className="truncate">{c.notes}</span>}
+                        {c.nextStep && (
+                          <span className="truncate text-primary">
+                            → {c.nextStep}
+                            {c.nextStepAt ? ` (${formatDate(c.nextStepAt)})` : ''}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -466,15 +473,28 @@ export function PhoningPage() {
                     {Object.entries(OBJECTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
                 </div>
-                <div>
-                  <label htmlFor="ph-nextstep" className="text-sm font-medium">Prochaine étape</label>
-                  <Input
-                    id="ph-nextstep"
-                    className="mt-1"
-                    placeholder="ex. rappeler jeudi"
-                    value={form.nextStep}
-                    onChange={e => setForm({ ...form, nextStep: e.target.value })}
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="ph-nextstep" className="text-sm font-medium">Prochaine étape</label>
+                    <Input
+                      id="ph-nextstep"
+                      className="mt-1"
+                      placeholder="ex. rappeler jeudi"
+                      value={form.nextStep}
+                      onChange={e => setForm({ ...form, nextStep: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="ph-nextstep-at" className="text-sm font-medium">Date de relance</label>
+                    <Input
+                      id="ph-nextstep-at"
+                      type="date"
+                      className="mt-1"
+                      min={new Date().toISOString().slice(0, 10)}
+                      value={form.nextStepAt}
+                      onChange={e => setForm({ ...form, nextStepAt: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
 

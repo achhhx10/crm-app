@@ -12,7 +12,9 @@ const callSchema = z.object({
   result: z.string().min(1, 'Le résultat est requis'),
   objection: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
-  nextStep: z.string().optional().nullable()
+  nextStep: z.string().optional().nullable(),
+  nextStepAt: z.string().datetime({ offset: true }).optional().nullable()
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional().nullable()
 });
 
 const router = Router();
@@ -23,7 +25,7 @@ function isAdmin(req: AuthRequest): boolean {
 
 router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { contactId } = req.query;
+    const { contactId, followUp } = req.query;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 50));
     const offset = (page - 1) * limit;
@@ -38,6 +40,11 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       conditions.push(eq(calls.contactId, Number(contactId)));
     }
 
+    // followUp=true -> only calls that scheduled a callback, due or overdue first.
+    if (followUp === 'true') {
+      conditions.push(sql`${calls.nextStepAt} IS NOT NULL AND ${calls.nextStepAt} <= NOW()`);
+    }
+
     const allCalls = await db
       .select({
         id: calls.id,
@@ -49,11 +56,13 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
         objection: calls.objection,
         notes: calls.notes,
         nextStep: calls.nextStep,
+        nextStepAt: calls.nextStepAt,
         // Joined so the UI can label each row instead of showing "Sans contact".
         businessName: contacts.businessName,
       })
       .from(calls)
       .leftJoin(contacts, eq(calls.contactId, contacts.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(calls.date))
       .limit(limit)
       .offset(offset);
@@ -87,6 +96,7 @@ router.get('/contact/:contactId', authMiddleware, async (req: AuthRequest, res: 
         objection: calls.objection,
         notes: calls.notes,
         nextStep: calls.nextStep,
+        nextStepAt: calls.nextStepAt,
         businessName: contacts.businessName,
       })
       .from(calls)
@@ -134,7 +144,7 @@ router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => 
 
 router.post('/', authMiddleware, validate(callSchema), async (req: AuthRequest, res: Response) => {
   try {
-    const { contactId, duration, result, objection, notes, nextStep } = req.body;
+    const { contactId, duration, result, objection, notes, nextStep, nextStepAt } = req.body;
 
     if (!contactId || !result) {
       res.status(400).json({ error: 'contactId et result requis' });
@@ -157,6 +167,9 @@ router.post('/', authMiddleware, validate(callSchema), async (req: AuthRequest, 
       objection: objection || null,
       notes: notes || null,
       nextStep: nextStep || null,
+      // A bare "2026-03-04" must land at 09:00 local, not midnight UTC, so that
+      // "due today" matches all day instead of only the first seconds.
+      nextStepAt: nextStepAt ? new Date(`${nextStepAt}T09:00:00`) : null,
     }).returning();
     res.json(call);
   } catch (error) {

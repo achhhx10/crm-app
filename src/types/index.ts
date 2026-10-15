@@ -44,6 +44,8 @@ export interface Call {
   objection: string | null;
   notes: string | null;
   nextStep: string | null;
+  /** Scheduled callback date. Null when the note has no date. */
+  nextStepAt?: string | number | Date | null;
   /** Joined from the contact row by GET /calls and GET /calls/contact/:id. */
   businessName?: string | null;
 }

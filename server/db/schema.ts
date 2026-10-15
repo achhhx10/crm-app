@@ -50,6 +50,7 @@ export const calls = pgTable('calls', {
   objection: text('objection'),
   notes: text('notes'),
   nextStep: text('next_step'),
+  nextStepAt: timestamp('next_step_at'),
 });
 
 export const deals = pgTable('deals', {

@@ -11,6 +11,7 @@ import { Plus, DollarSign, TrendingUp, Trash2 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { formatCurrency, formatDate, STAGES } from '../lib/utils';
 import { Pagination } from '../components/ui/pagination';
+import { ContactPicker, PickedContact } from '../components/ui/contact-picker';
 
 const SITE_TYPES: Record<string, string> = {
   vitrine_simple: 'Vitrine Simple',
@@ -42,7 +43,8 @@ interface Deal {
   assignedTo: number | null;
   createdAt: number | null;
   signedAt: number | null;
-  contactName?: string;
+  contactName?: string | null;
+  contactCity?: string | null;
 }
 
 export function DealsPage() {
@@ -52,13 +54,12 @@ export function DealsPage() {
 
   const [deals, setDeals] = useState<Deal[]>([]);
   const [stats, setStats] = useState<DealStats | null>(null);
-  const [contacts, setContacts] = useState<{ id: number; businessName: string; contactName: string }[]>([]);
+  const [pickedContact, setPickedContact] = useState<PickedContact | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
-    contactId: '',
     amount: '',
     siteType: 'vitrine_simple',
     status: 'en_cours',
@@ -71,15 +72,13 @@ export function DealsPage() {
 
   const loadData = async () => {
     try {
-      const [d, s, c] = await Promise.all([
+      const [d, s] = await Promise.all([
         api.deals.list({ page: String(page), limit: '20' }),
         api.deals.stats(),
-        api.contacts.list({ limit: '1000' }),
       ]);
       setDeals(d.deals);
       setTotal(d.total);
       setStats(s);
-      setContacts(c.contacts || []);
     } catch (err) {
       console.error('Erreur chargement deals:', err);
     } finally {
@@ -87,23 +86,26 @@ export function DealsPage() {
     }
   };
 
-  const getContactName = (contactId: number) => {
-    const contact = contacts.find(c => c.id === contactId);
-    return contact ? (contact.businessName || contact.contactName || `#${contactId}`) : `#${contactId}`;
-  };
+  const getContactName = (deal: Deal) =>
+    deal.contactName || `#${deal.contactId}`;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
     try {
+      if (!pickedContact) {
+        setFormError('Sélectionnez un prospect');
+        return;
+      }
       await api.deals.create({
-        contactId: Number(form.contactId),
+        contactId: pickedContact.id,
         amount: Number(form.amount),
         siteType: form.siteType,
         status: form.status,
       });
       setShowCreate(false);
-      setForm({ contactId: '', amount: '', siteType: 'vitrine_simple', status: 'en_cours' });
+      setPickedContact(null);
+      setForm({ amount: '', siteType: 'vitrine_simple', status: 'en_cours' });
       loadData();
       toast('Deal créé', 'success');
     } catch (err: any) {
@@ -200,7 +202,7 @@ export function DealsPage() {
       {/* Header + Create Button */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Liste des Deals</h2>
-        <Button onClick={() => { setForm({ contactId: '', amount: '', siteType: 'vitrine_simple', status: 'en_cours' }); setFormError(''); setShowCreate(true); }}>
+        <Button onClick={() => { setPickedContact(null); setForm({ amount: '', siteType: 'vitrine_simple', status: 'en_cours' }); setFormError(''); setShowCreate(true); }}>
           <Plus className="h-4 w-4 mr-1" /> Nouveau Deal
         </Button>
       </div>
@@ -224,7 +226,7 @@ export function DealsPage() {
                 const dealStatus = DEAL_STATUSES[deal.status] || { label: deal.status, color: 'bg-gray-100 text-gray-700' };
                 return (
                   <TableRow key={deal.id}>
-                    <TableCell className="font-medium">{getContactName(deal.contactId)}</TableCell>
+                    <TableCell className="font-medium">{getContactName(deal)}</TableCell>
                     <TableCell>{formatCurrency(deal.amount)}</TableCell>
                     <TableCell>{SITE_TYPES[deal.siteType] || deal.siteType}</TableCell>
                     <TableCell>
@@ -277,13 +279,15 @@ export function DealsPage() {
         )}
         <form onSubmit={handleCreate} className="space-y-4 mt-4">
           <div>
-            <label className="text-sm font-medium">Contact *</label>
-            <Select value={form.contactId} onChange={e => setForm({ ...form, contactId: e.target.value })} required className="mt-1">
-              <option value="">Sélectionner un contact...</option>
-              {contacts.map(c => (
-                <option key={c.id} value={c.id}>{c.businessName || c.contactName || `#${c.id}`}</option>
-              ))}
-            </Select>
+            <label htmlFor="deal-contact" className="text-sm font-medium">Contact *</label>
+            <div className="mt-1">
+              <ContactPicker
+                id="deal-contact"
+                value={pickedContact}
+                onChange={setPickedContact}
+                required
+              />
+            </div>
           </div>
           <div>
             <label className="text-sm font-medium">Montant (€) *</label>

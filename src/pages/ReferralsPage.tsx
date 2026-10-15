@@ -8,6 +8,7 @@ import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { Plus, Gift, Award } from 'lucide-react';
+import { ContactPicker, PickedContact } from '../components/ui/contact-picker';
 import { useToast } from '../components/ui/toast';
 import { formatDate } from '../lib/utils';
 import { Pagination } from '../components/ui/pagination';
@@ -23,8 +24,9 @@ export function ReferralsPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [form, setForm] = useState({
-    sourceContactId: '', referredName: '', referredPhone: '', referredEmail: '',
+    referredName: '', referredPhone: '', referredEmail: '',
   });
+  const [pickedSource, setPickedSource] = useState<PickedContact | null>(null);
 
   useEffect(() => {
     loadReferrals();
@@ -60,7 +62,7 @@ export function ReferralsPage() {
     e.preventDefault();
     try {
       await api.referrals.create({
-        sourceContactId: form.sourceContactId ? Number(form.sourceContactId) : undefined,
+        sourceContactId: pickedSource ? pickedSource.id : undefined,
         referredName: form.referredName || undefined,
         referredPhone: form.referredPhone || undefined,
         referredEmail: form.referredEmail || undefined,
@@ -85,7 +87,8 @@ export function ReferralsPage() {
   };
 
   const resetForm = () => {
-    setForm({ sourceContactId: '', referredName: '', referredPhone: '', referredEmail: '' });
+    setPickedSource(null);
+    setForm({ referredName: '', referredPhone: '', referredEmail: '' });
   };
 
   if (loading) {
@@ -196,11 +199,10 @@ export function ReferralsPage() {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           <div>
-            <label className="text-sm font-medium">Prospect source</label>
-            <Select value={form.sourceContactId} onChange={e => setForm({...form, sourceContactId: e.target.value})} className="mt-1">
-              <option value="">Sélectionner un prospect...</option>
-              {contacts.map(c => <option key={c.id} value={String(c.id)}>{c.businessName}</option>)}
-            </Select>
+            <label htmlFor="referral-source" className="text-sm font-medium">Prospect source</label>
+            <div className="mt-1">
+              <ContactPicker id="referral-source" value={pickedSource} onChange={setPickedSource} />
+            </div>
           </div>
           <div>
             <label className="text-sm font-medium">Nom du recommandé</label>

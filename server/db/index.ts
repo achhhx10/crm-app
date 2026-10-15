@@ -103,6 +103,19 @@ async function initSchema() {
   ALTER TABLE contacts ADD COLUMN IF NOT EXISTS language TEXT;
   ALTER TABLE contacts ADD COLUMN IF NOT EXISTS language_source TEXT;
   CREATE INDEX IF NOT EXISTS idx_contacts_language ON contacts(language);
+
+  -- Trigram search: typo tolerance ("boulangerie" finds "Boulangerie Marten")
+  -- and keeps LIKE/ILIKE scans index-backed on 39k rows.
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  CREATE INDEX IF NOT EXISTS idx_contacts_business_name_trgm ON contacts USING gin (business_name gin_trgm_ops);
+  CREATE INDEX IF NOT EXISTS idx_contacts_contact_name_trgm ON contacts USING gin (contact_name gin_trgm_ops);
+  CREATE INDEX IF NOT EXISTS idx_contacts_city_trgm ON contacts USING gin (city gin_trgm_ops);
+  CREATE INDEX IF NOT EXISTS idx_contacts_activity_trgm ON contacts USING gin (activity gin_trgm_ops);
+
+  -- Scheduled follow-ups. Without this the "prochaine étape" note is write-only:
+  -- it was stored and returned by the API but rendered by no screen.
+  ALTER TABLE calls ADD COLUMN IF NOT EXISTS next_step_at TIMESTAMP;
+  CREATE INDEX IF NOT EXISTS idx_calls_next_step_at ON calls(next_step_at);
   `);
 }
 
