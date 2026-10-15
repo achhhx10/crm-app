@@ -17,6 +17,21 @@ export const db = drizzle(pool, { schema });
 
 // Bootstrap DDL so a fresh database works on first boot (no separate migrate step).
 async function initSchema() {
+  // Typo-tolerant search ("boulangerie" finds "Boulangerie Marten"). Kept out of
+  // the main block: creating an extension needs elevated privileges, and a
+  // failure here must not abort the schema bootstrap and take the API down.
+  try {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_contacts_business_name_trgm ON contacts USING gin (business_name gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS idx_contacts_contact_name_trgm ON contacts USING gin (contact_name gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS idx_contacts_city_trgm ON contacts USING gin (city gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS idx_contacts_activity_trgm ON contacts USING gin (activity gin_trgm_ops);
+    `);
+  } catch (err) {
+    console.warn('pg_trgm unavailable, search falls back to plain ILIKE:', (err as Error).message);
+  }
+
   await pool.query(`
   CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
@@ -104,13 +119,6 @@ async function initSchema() {
   ALTER TABLE contacts ADD COLUMN IF NOT EXISTS language_source TEXT;
   CREATE INDEX IF NOT EXISTS idx_contacts_language ON contacts(language);
 
-  -- Trigram search: typo tolerance ("boulangerie" finds "Boulangerie Marten")
-  -- and keeps LIKE/ILIKE scans index-backed on 39k rows.
-  CREATE EXTENSION IF NOT EXISTS pg_trgm;
-  CREATE INDEX IF NOT EXISTS idx_contacts_business_name_trgm ON contacts USING gin (business_name gin_trgm_ops);
-  CREATE INDEX IF NOT EXISTS idx_contacts_contact_name_trgm ON contacts USING gin (contact_name gin_trgm_ops);
-  CREATE INDEX IF NOT EXISTS idx_contacts_city_trgm ON contacts USING gin (city gin_trgm_ops);
-  CREATE INDEX IF NOT EXISTS idx_contacts_activity_trgm ON contacts USING gin (activity gin_trgm_ops);
 
   -- Scheduled follow-ups. Without this the "prochaine étape" note is write-only:
   -- it was stored and returned by the API but rendered by no screen.
