@@ -69,7 +69,7 @@ export async function dueActions(req: AuthRequest): Promise<ActionItem[]> {
     ORDER BY last_call.next_step_at ASC
     LIMIT 20
   `).catch((err) => {
-    console.error('actions: relances dues indisponibles:', err.message);
+    console.error('actions: relances dues indisponibles:', err.message, '| position', err.position, '| near', err.where, '| detail', err.detail);
     return { rows: [] as any[] };
   });
 
@@ -90,7 +90,7 @@ export async function dueActions(req: AuthRequest): Promise<ActionItem[]> {
     ORDER BY ${deals.createdAt} ASC
     LIMIT 20
   `).catch((err) => {
-    console.error('actions: devis sans réponse indisponibles:', err.message);
+    console.error('actions: devis sans réponse indisponibles:', err.message, '| position', err.position, '| near', err.where, '| detail', err.detail);
     return { rows: [] as any[] };
   });
 
@@ -115,7 +115,7 @@ export async function dueActions(req: AuthRequest): Promise<ActionItem[]> {
     ORDER BY ${contacts.googleRating} DESC NULLS LAST
     LIMIT 20
   `).catch((err) => {
-    console.error('actions: prêts à appeler indisponibles:', err.message);
+    console.error('actions: prêts à appeler indisponibles:', err.message, '| position', err.position, '| near', err.where, '| detail', err.detail);
     return { rows: [] as any[] };
   });
 
