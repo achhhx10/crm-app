@@ -71,10 +71,11 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       .limit(limit)
       .offset(offset);
 
-    const totalQuery = db.select({ value: count() }).from(calls);
-    if (conditions.length > 0) {
-      totalQuery.where(and(...conditions));
-    }
+    // Drizzle queries are immutable: `.where()` returns a new query and leaves
+    // the original untouched, so the filtered query must be used explicitly or
+    // the filters silently vanish from the pagination total.
+    const base = db.select({ value: count() }).from(calls);
+    const totalQuery = conditions.length > 0 ? base.where(and(...conditions)) : base;
     const total = (await totalQuery)[0]?.value ?? 0;
 
     res.json({ calls: allCalls, total });

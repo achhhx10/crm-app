@@ -593,6 +593,37 @@ router.put('/bulk-assign', authMiddleware, requireRole('admin'), async (req: Aut
   }
 });
 
+/**
+ * Bulk archive. The bulk delete removed rows outright, which cascaded into
+ * calls, deals and referrals: one mis-click destroyed a prospect's whole history.
+ *
+ * Registered above PUT /:id: Express matches routes in registration order, so a
+ * "/bulk-archive" request would otherwise be captured by the "/:id" pattern,
+ * fail parseId() and answer 404.
+ */
+router.put('/bulk-archive', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: 'ids (array) requis' });
+      return;
+    }
+    const numericIds = [...new Set(ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0))];
+    if (numericIds.length === 0) {
+      res.status(400).json({ error: 'ids invalides' });
+      return;
+    }
+    const archived = await db.update(contacts)
+      .set({ archivedAt: new Date(), archivedBy: req.user!.userId, updatedAt: new Date() })
+      .where(and(inArray(contacts.id, numericIds), isNull(contacts.archivedAt)))
+      .returning({ id: contacts.id });
+    res.json({ success: true, archived: archived.length });
+  } catch (error) {
+    console.error('Bulk archive error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.put('/:id', authMiddleware, validate(contactSchema.partial()), async (req: AuthRequest, res: Response) => {
   try {
     const id = parseId(req.params.id);
@@ -622,33 +653,6 @@ router.put('/:id', authMiddleware, validate(contactSchema.partial()), async (req
     res.json(contact);
   } catch (error) {
     console.error('Update contact error:', error);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-/**
- * Bulk archive. The bulk delete removed rows outright, which cascaded into
- * calls, deals and referrals: one mis-click destroyed a prospect's whole history.
- */
-router.put('/bulk-archive', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
-  try {
-    const { ids } = req.body;
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      res.status(400).json({ error: 'ids (array) requis' });
-      return;
-    }
-    const numericIds = [...new Set(ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0))];
-    if (numericIds.length === 0) {
-      res.status(400).json({ error: 'ids invalides' });
-      return;
-    }
-    const archived = await db.update(contacts)
-      .set({ archivedAt: new Date(), archivedBy: req.user!.userId, updatedAt: new Date() })
-      .where(and(inArray(contacts.id, numericIds), isNull(contacts.archivedAt)))
-      .returning({ id: contacts.id });
-    res.json({ success: true, archived: archived.length });
-  } catch (error) {
-    console.error('Bulk archive error:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });

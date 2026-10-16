@@ -131,6 +131,15 @@ const CHECKS = [
   ['prospects (suppression desactivee)', '/contacts/1', { method: 'DELETE', expect: [404, 405] }],
   ['prospects (suppression groupee desactivee)', '/contacts/bulk', { method: 'DELETE', expect: [404, 405] }],
   ['prospects (identifiant invalide)', '/contacts/bulk', { expect: [404] }],
+  // A PUT to /contacts/bulk-archive used to be captured by the PUT /:id pattern,
+  // fail parseId() and answer 404: the UI's bulk archive button silently did
+  // nothing. An empty ids array answers 400 without touching any data, which
+  // proves the route is reachable.
+  ['prospects (archivage groupe joignable)', '/contacts/bulk-archive', {
+    method: 'PUT',
+    expect: [400],
+    shape: [{ path: 'error', type: 'string' }],
+  }],
   ['prospects (listes)', '/contacts/activities'],
   ['villes', '/contacts/cities'],
   ['appels', '/calls?limit=5', { shape: [{ path: 'calls', type: 'array' }] }],

@@ -2,9 +2,9 @@
 /**
  * Full PostgreSQL backup and restore.
  *
- * scripts/backup.sh copies data/crm.db, which is the SQLite file from before the
- * migration. The 39,254 live prospects are on Railway Postgres and had no backup
- * at all. This is that backup.
+ * The former scripts/backup.sh copied data/crm.db, which was the SQLite file from
+ * before the migration; it has been removed. The 39,254 live prospects are on
+ * Railway Postgres and had no backup at all. This is that backup.
  *
  * Dumps every table to JSON, in dependency order, plus a manifest recording row
  * counts and the schema version, so a restore can be checked before it runs.
@@ -179,6 +179,39 @@ async function backup() {
 }
 
 /**
+ * Rewind every serial sequence past the restored ids.
+ *
+ * A restore inserts explicit ids, which Postgres does not feed back into the
+ * sequences. Left as-is, the next insert would draw from the sequence's stale
+ * value (1 on a fresh database) and collide with a restored row, so every
+ * future create would fail on a duplicate key. `setval(seq, max, true)` makes
+ * the next value max + 1; an empty table starts back at 1.
+ */
+async function resetSerialSequences(client, tables) {
+  for (const table of tables) {
+    const cols = await client.query(
+      `SELECT column_name, column_default
+         FROM information_schema.columns
+        WHERE table_name = $1 AND column_default LIKE 'nextval%'`,
+      [table],
+    );
+    for (const { column_name, column_default } of cols.rows) {
+      const seq = column_default.match(/nextval\('([^']+)'/)?.[1];
+      if (!seq) continue;
+      const max = Number(
+        (await client.query(`SELECT COALESCE(MAX("${column_name}"), 0) AS max FROM "${table}"`)).rows[0].max,
+      );
+      if (max === 0) {
+        await client.query(`SELECT setval('${seq}', 1, false)`);
+      } else {
+        await client.query(`SELECT setval('${seq}', ${max})`);
+      }
+      console.log(`  séquence  ${seq} -> ${max + 1} (prochaine valeur)`);
+    }
+  }
+}
+
+/**
  * Restore order matters: children reference contacts, which reference users.
  * Everything runs in one transaction, so a failure leaves the database untouched.
  */
@@ -280,6 +313,7 @@ async function restore(dir, dryRun, allowDrift = false) {
     console.log(`\n  Cible de restauration : ${target}`);
     console.log('  ATTENTION : une restauration reelle DELETE puis reecrit chaque table');
     console.log('             ci-dessus. La base de production serait remplacee.');
+    console.log('  Les sequences seront ensuite ramenees au max de chaque table (setval).');
     await client.end();
     console.log(problems === 0
       ? '\nSimulation terminee : aucune ecriture effectuee, sauvegarde exploitable.'
@@ -306,6 +340,16 @@ async function restore(dir, dryRun, allowDrift = false) {
       console.log(`  ${table.padEnd(10)} ${rows.length} restaurés`);
     }
     await client.query('COMMIT');
+
+    // Sequences live outside the row data: rewinding them cannot roll back, but
+    // skipping them leaves future inserts broken. A failure here must be loud.
+    try {
+      await resetSerialSequences(client, TABLES);
+    } catch (err) {
+      console.error('Données restaurées, MAIS le reset des séquences a échoué :', err.message);
+      console.error('Les prochaines insertions remonteront des collisions de clé.');
+      process.exit(1);
+    }
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('Restauration annulée, la base est intacte :', err.message);

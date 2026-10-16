@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "start": "tsx server/index.ts",
     "seed": "tsx --env-file=.env server/seed.ts",
-    "backup": "bash scripts/backup.sh",
+    "backup": "node scripts/backup-postgres.mjs",
     "smoke": "node scripts/smoke.mjs",
     "check-sql": "tsx scripts/check-sql.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",

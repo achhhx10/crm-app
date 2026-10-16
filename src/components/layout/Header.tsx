@@ -10,6 +10,7 @@ const pageTitles: Record<string, string> = {
   '/contacts': 'Prospects',
   '/phoning': 'Phoning',
   '/contacts/:id': 'Fiche prospect',
+  '/followups': 'À relancer',
   '/deals': 'Deals',
   '/calls': 'Appels',
   '/referrals': 'Recommandations',
