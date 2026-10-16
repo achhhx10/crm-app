@@ -8,12 +8,11 @@ import { Segmented } from '../components/ui/segmented';
 import { Card, CardContent } from '../components/ui/card';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
-import { Plus, Search, Phone, Edit, Eye, EyeOff, ChevronUp, ChevronDown, Download, Trash2, Archive, ArrowUpDown, X, Globe, GlobeLock, Flame, Gem, RefreshCw, Ban, MapPinOff, Star } from 'lucide-react';
+import { ContactEditDialog } from '../components/contacts/ContactEditDialog';
+import { Plus, Search, Phone, Edit, Eye, EyeOff, ChevronUp, ChevronDown, Download, Archive, ArrowUpDown, X, Globe, GlobeLock, Flame, Gem, RefreshCw, Ban, MapPinOff, Star } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { STAGES, CALL_RESULTS, OBJECTIONS, LANGUAGES, formatDate, opportunityScore, opportunityMeta } from '../lib/utils';
 import type { Contact } from '../types';
-
-const sources = ['appel', 'internet', 'bouche_a_oreille', 'linkedin', 'autre'];
 
 const PRESETS: { id: string; label: string; icon: React.ElementType; hint: string; filters: Partial<Record<string, string>> }[] = [
   { id: 'chaud', label: 'Chaud', icon: Flame, hint: 'Sans site + joignable', filters: { hasSite: 'pas_de_site', reach: 'true' } },
@@ -210,12 +209,6 @@ export function ContactsPage() {
   const [bulkAssignee, setBulkAssignee] = useState('');
   const [team, setTeam] = useState<{ id: number; name: string }[]>([]);
   const { widths, save: saveWidths } = useColumnWidths();
-  const [form, setForm] = useState({
-    businessName: '', contactName: '', phone: '', email: '',
-    activity: '', city: '', hasSite: '', siteUrl: '', siteStatus: '',
-    source: '', stage: 'identifie', notes: '', dnc: 0, dncReason: '', assignedTo: '',
-  });
-  const [formError, setFormError] = useState('');
   const [callForm, setCallForm] = useState({
     result: 'pas_decroche', objection: '', notes: '', nextStep: '',
   });
@@ -439,38 +432,16 @@ export function ContactsPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError('');
-    try {
-      if (editingContact) {
-        await api.contacts.update(editingContact.id, form);
-      } else {
-        await api.contacts.create(form);
-      }
-      setShowForm(false);
-      setEditingContact(null);
-      resetForm();
-      loadContacts();
-      toast(editingContact ? 'Prospect modifié' : 'Prospect ajouté', 'success');
-    } catch (err: any) {
-      toast("Erreur lors de l'enregistrement", 'error');
-      setFormError(err?.message || "Erreur lors de l'enregistrement");
-    }
+  const handleSaved = () => {
+    const wasEditing = Boolean(editingContact);
+    setShowForm(false);
+    setEditingContact(null);
+    loadContacts();
+    toast(wasEditing ? 'Prospect modifié' : 'Prospect ajouté', 'success');
   };
 
   const handleEdit = (contact: Contact) => {
     setEditingContact(contact);
-    setFormError('');
-    setForm({
-      businessName: contact.businessName || '', contactName: contact.contactName || '',
-      phone: contact.phone || '', email: contact.email || '', activity: contact.activity || '',
-      city: contact.city || '', hasSite: contact.hasSite || '', siteUrl: contact.siteUrl || '',
-      dnc: contact.dnc ? 1 : 0, dncReason: contact.dncReason || '',
-      assignedTo: contact.assignedTo ? String(contact.assignedTo) : '',
-      siteStatus: contact.siteStatus || '', source: contact.source || '',
-      stage: contact.stage || 'identifie', notes: contact.notes || '',
-    });
     setShowForm(true);
   };
 
@@ -493,14 +464,6 @@ export function ContactsPage() {
     } catch (err) {
       toast('Erreur lors de la restauration', 'error');
     }
-  };
-
-  const resetForm = () => {
-    setForm({
-      businessName: '', contactName: '', phone: '', email: '',
-      activity: '', city: '', hasSite: '', siteUrl: '', siteStatus: '',
-      source: '', stage: 'identifie', notes: '', dnc: 0, dncReason: '', assignedTo: '',
-    });
   };
 
   const getVisibleContacts = () => {
@@ -628,7 +591,7 @@ export function ContactsPage() {
             className="w-20"
           />
         </div>
-        <Button onClick={() => { resetForm(); setEditingContact(null); setFormError(''); setShowForm(true); }}>
+        <Button onClick={() => { setEditingContact(null); setShowForm(true); }}>
           <Plus className="h-4 w-4 mr-1" /> Ajouter
         </Button>
       </div>
@@ -838,120 +801,14 @@ export function ContactsPage() {
       )}
 
       {/* Add/Edit Dialog */}
-      <Dialog open={showForm} onClose={() => { setShowForm(false); setEditingContact(null); setFormError(''); }}>
-        <DialogHeader>
-          <DialogTitle>{editingContact ? 'Modifier le prospect' : 'Ajouter un prospect'}</DialogTitle>
-        </DialogHeader>
-        {formError && (
-          <div className="mt-3 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {formError}
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-4 mt-4 max-h-[60vh] overflow-y-auto pr-2">
-          <div>
-            <label htmlFor="contact-businessName" className="text-sm font-medium">Nom de l'entreprise *</label>
-            <Input id="contact-businessName" value={form.businessName} onChange={e => setForm({...form, businessName: e.target.value})} required className="mt-1" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="contact-contactName" className="text-sm font-medium">Nom du contact</label>
-              <Input id="contact-contactName" value={form.contactName} onChange={e => setForm({...form, contactName: e.target.value})} className="mt-1" />
-            </div>
-            <div>
-              <label htmlFor="contact-phone" className="text-sm font-medium">Téléphone</label>
-              <Input id="contact-phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="mt-1" />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="contact-email" className="text-sm font-medium">Email</label>
-              <Input id="contact-email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="mt-1" />
-            </div>
-            <div>
-              <label htmlFor="contact-activity" className="text-sm font-medium">Activité</label>
-              <Input id="contact-activity" value={form.activity} onChange={e => setForm({...form, activity: e.target.value})} className="mt-1" />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="contact-city" className="text-sm font-medium">Ville</label>
-              <Input id="contact-city" value={form.city} onChange={e => setForm({...form, city: e.target.value})} className="mt-1" />
-            </div>
-            <div>
-              <label htmlFor="contact-source" className="text-sm font-medium">Source</label>
-              <Select id="contact-source" value={form.source} onChange={e => setForm({...form, source: e.target.value})} className="mt-1">
-                <option value="">Sélectionner...</option>
-                {sources.map(s => <option key={s} value={s}>{s}</option>)}
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="contact-hasSite" className="text-sm font-medium">A un site ?</label>
-              <Select id="contact-hasSite" value={form.hasSite} onChange={e => setForm({...form, hasSite: e.target.value})} className="mt-1">
-                <option value="">Sélectionner...</option>
-                <option value="pas_de_site">Pas de site</option>
-                <option value="site_vetuste">Site vétuste</option>
-                <option value="site_fonctionnel">Site fonctionnel</option>
-              </Select>
-            </div>
-            <div>
-              <label htmlFor="contact-stage" className="text-sm font-medium">Stage</label>
-              <Select id="contact-stage" value={form.stage} onChange={e => setForm({...form, stage: e.target.value})} className="mt-1">
-                {Object.entries(STAGES).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
-              </Select>
-            </div>
-          </div>
-          {form.hasSite && form.hasSite !== 'pas_de_site' && (
-            <div>
-              <label htmlFor="contact-siteUrl" className="text-sm font-medium">URL du site</label>
-              <Input id="contact-siteUrl" value={form.siteUrl} onChange={e => setForm({...form, siteUrl: e.target.value})} className="mt-1" />
-            </div>
-          )}
-          <div>
-            <label htmlFor="contact-notes" className="text-sm font-medium">Notes</label>
-            <textarea id="contact-notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
-              className="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-          </div>
-          {isAdmin && (
-            <div>
-              <label htmlFor="contact-assigned" className="text-sm font-medium">Commercial assigné</label>
-              <Select id="contact-assigned" value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })}
-                className="mt-1">
-                <option value="">Personne</option>
-                {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
-              </Select>
-            </div>
-          )}
-          <div className="rounded-lg border border-border p-3">
-            <label className="flex min-h-[44px] items-center gap-2 text-sm font-medium">
-              <input
-                type="checkbox"
-                checked={form.dnc === 1}
-                onChange={(e) => setForm({ ...form, dnc: e.target.checked ? 1 : 0 })}
-                className="h-4 w-4 rounded border-input"
-              />
-              Ne plus appeler (opt-out)
-            </label>
-            <p className="text-xs text-muted-foreground mt-1">
-              Masqué de la file de phoning et des listes pour toute l'équipe, sur tous les appareils.
-            </p>
-            {form.dnc === 1 && (
-              <Input
-                aria-label="Motif du refus d'appel"
-                value={form.dncReason}
-                onChange={e => setForm({ ...form, dncReason: e.target.value })}
-                className="mt-2"
-                placeholder="Motif (ex. : a demandé de ne plus être appelé)"
-              />
-            )}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingContact(null); setFormError(''); }}>Annuler</Button>
-            <Button type="submit">{editingContact ? 'Modifier' : 'Ajouter'}</Button>
-          </DialogFooter>
-        </form>
-      </Dialog>
+      <ContactEditDialog
+        open={showForm}
+        contact={editingContact}
+        isAdmin={isAdmin}
+        team={team}
+        onClose={() => { setShowForm(false); setEditingContact(null); }}
+        onSaved={handleSaved}
+      />
 
       {/* View Dialog */}
       <Dialog open={!!selectedContact} onClose={() => setSelectedContact(null)}>

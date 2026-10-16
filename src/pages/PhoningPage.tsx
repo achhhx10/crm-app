@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PhoneCall, Search, SkipForward, Check, ChevronLeft, ChevronRight,
-  Star, Globe, GlobeLock, MapPin, Loader2, Phone, AlertCircle,
+  Star, Globe, GlobeLock, MapPin, Loader2, Phone, AlertCircle, Ban, Edit,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { ContactEditDialog } from '../components/contacts/ContactEditDialog';
 import { useToast } from '../components/ui/toast';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -20,6 +21,39 @@ const QUEUE_KEY = 'crm_phoning_queue';
 const DRAFT_PREFIX = 'crm_phoning_draft_';
 
 const RESULT_KEYS = Object.keys(CALL_RESULTS);
+
+const STAGE_ORDER: Record<string, number> = {
+  identifie: 0,
+  contacte: 1,
+  interesse: 2,
+  rdv_programme: 3,
+  proposition_envoyee: 4,
+  signe: 5,
+  perdu: 6,
+};
+
+/**
+ * Suggest the next stage for a call result without silently undoing work.
+ * Positive outcomes move forward, no-answers only mark an untouched lead as
+ * contacted, and a lost late-stage deal is never auto-marked as lost.
+ */
+function suggestStageForResult(currentStage: string | null | undefined, result: string): string {
+  const current = currentStage || 'identifie';
+  if (result === 'pas_interesse') {
+    return current === 'proposition_envoyee' || current === 'signe' ? current : 'perdu';
+  }
+  if (result === 'interesse' || result === 'rdv_obtenu') {
+    const target = result === 'rdv_obtenu' ? 'rdv_programme' : 'interesse';
+    const currentRank = STAGE_ORDER[current];
+    const targetRank = STAGE_ORDER[target];
+    if (currentRank === undefined || targetRank === undefined) return target;
+    return targetRank >= currentRank ? target : current;
+  }
+  if (result === 'pas_decroche' || result === 'messagerie') {
+    return current === 'identifie' ? 'contacte' : current;
+  }
+  return current;
+}
 
 interface Filters {
   reach: string;
@@ -48,6 +82,13 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export function PhoningPage() {
   const { toast } = useToast();
+  const isAdmin = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('crm_user') || '{}').role === 'admin';
+    } catch {
+      return false;
+    }
+  }, []);
 
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [queue, setQueue] = useState<Contact[]>([]);
@@ -72,7 +113,9 @@ export function PhoningPage() {
   const [hasMore, setHasMore] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({ result: '', objection: '', notes: '', nextStep: '', nextStepAt: '' });
+  const [form, setForm] = useState({
+    result: '', stage: 'identifie', stageTouched: false, objection: '', notes: '', nextStep: '', nextStepAt: '',
+  });
   const [history, setHistory] = useState<Call[]>([]);
   const [elapsed, setElapsed] = useState(0);
   // The timer used to start when the card rendered, so "duration" measured how
@@ -87,6 +130,7 @@ export function PhoningPage() {
   // button has focus fires both our keydown handler and the button's own click.
   const savingRef = useRef(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   /** Any edit marks the rep as engaged: the timer starts here, not on render.
    *  Only the first interaction sets the origin, so typing does not keep
@@ -98,6 +142,19 @@ export function PhoningPage() {
   };
 
   const current = queue[index] ?? null;
+
+  const selectResult = useCallback((key: string) => {
+    markInteracting();
+    setForm(prev => {
+      const next = { ...prev, result: key };
+      // Preserve an explicit stage choice. Otherwise keep the suggestion in sync
+      // with the selected outcome.
+      if (!prev.stageTouched) {
+        next.stage = suggestStageForResult(current?.stage, key);
+      }
+      return next;
+    });
+  }, [current?.stage]);
 
   /* ---------- queue loading ---------- */
 
@@ -194,7 +251,10 @@ export function PhoningPage() {
     interactingRef.current = false;
 
     // restore draft for this lead
-    let draft = { result: '', objection: '', notes: '', nextStep: '', nextStepAt: '' };
+    let draft = {
+      result: '', stage: current.stage || 'identifie', stageTouched: false,
+      objection: '', notes: '', nextStep: '', nextStepAt: '',
+    };
     try {
       const raw = localStorage.getItem(DRAFT_PREFIX + current.id);
       if (raw) draft = { ...draft, ...JSON.parse(raw) };
@@ -212,7 +272,9 @@ export function PhoningPage() {
   useEffect(() => {
     if (!current) return;
     try {
-      const empty = !form.result && !form.objection && !form.notes && !form.nextStep && !form.nextStepAt;
+      // An untouched stage suggestion is derived state, not user work, so it must not
+      // create a local draft by itself. A manually selected stage is preserved.
+      const empty = !form.result && !form.objection && !form.notes && !form.nextStep && !form.nextStepAt && !form.stageTouched;
       if (empty) localStorage.removeItem(DRAFT_PREFIX + current.id);
       else localStorage.setItem(DRAFT_PREFIX + current.id, JSON.stringify(form));
     } catch { /* ignore */ }
@@ -245,6 +307,22 @@ export function PhoningPage() {
 
   /* ---------- actions ---------- */
 
+  const openLeadEditor = useCallback(() => {
+    if (!current) return;
+    markInteracting();
+    setEditOpen(true);
+  }, [current]);
+
+  const handleLeadSaved = useCallback((saved: Contact) => {
+    setQueue(prev => prev.map(c => (c.id === saved.id ? { ...c, ...saved } : c)));
+    setEditOpen(false);
+    if (saved.dnc) {
+      toast('Opt-out enregistré. Le lead reste affiché\u00a0: vérifie puis passe au suivant.', 'success');
+    } else {
+      toast('Prospect modifié', 'success');
+    }
+  }, [toast]);
+
   const openSearch = useCallback(() => {
     if (!current) return;
     const url = buildSearchUrl(current);
@@ -276,11 +354,31 @@ export function PhoningPage() {
         nextStep: form.nextStep || undefined,
         nextStepAt: form.nextStepAt || undefined,
       });
+      // Record the call first. A failed stage update must not erase the call, but
+      // it also must not pretend the pipeline moved.
+      let stageFailed = false;
+      if (form.stage && form.stage !== current.stage) {
+        try {
+          const updated = await api.contacts.update(current.id, { stage: form.stage });
+          const nextStage = updated?.stage || form.stage;
+          setQueue(prev => prev.map(c => (c.id === current.id ? { ...c, stage: nextStage } : c)));
+        } catch (stageErr) {
+          console.error(stageErr);
+          stageFailed = true;
+        }
+      }
       try { localStorage.removeItem(DRAFT_PREFIX + current.id); } catch { /* ignore */ }
       setDone(prev => new Set(prev).add(current.id));
-      setForm({ result: '', objection: '', notes: '', nextStep: '', nextStepAt: '' });
+      setForm({
+        result: '', stage: current.stage || 'identifie', stageTouched: false,
+        objection: '', notes: '', nextStep: '', nextStepAt: '',
+      });
       setHistory(prev => [{ id: -Date.now(), contactId: current.id, userId: null, date: Math.floor(Date.now() / 1000), duration: elapsed, result: form.result, objection: form.objection || null, notes: form.notes || null, nextStep: form.nextStep || null, nextStepAt: form.nextStepAt || null }, ...prev]);
-      toast('Appel enregistré', 'success');
+      if (stageFailed) {
+        toast("Appel enregistré, mais le stage n'a pas été mis à jour", 'error');
+      } else {
+        toast('Appel enregistré', 'success');
+      }
       goNext();
     } catch (err) {
       console.error(err);
@@ -307,7 +405,7 @@ export function PhoningPage() {
         if (showHelp) { setShowHelp(false); return; }
         return;
       }
-      if (showHelp) return;
+      if (showHelp || editOpen) return;
       if (isTypingTarget(e.target)) return;
 
       switch (e.key) {
@@ -317,6 +415,8 @@ export function PhoningPage() {
           e.preventDefault(); goPrev(); break;
         case 'Enter':
           e.preventDefault(); saveCall(); break;
+        case 'e': case 'E':
+          e.preventDefault(); openLeadEditor(); break;
         case 'g': case 'G':
           e.preventDefault(); openSearch(); break;
         case '?':
@@ -325,14 +425,13 @@ export function PhoningPage() {
           if (/^[1-5]$/.test(e.key)) {
             e.preventDefault();
             // Fastest path to logging a result, so it must start the clock too.
-            markInteracting();
-            setForm(prev => ({ ...prev, result: RESULT_KEYS[Number(e.key) - 1] || prev.result }));
+            selectResult(RESULT_KEYS[Number(e.key) - 1] || form.result);
           }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [goNext, goPrev, saveCall, openSearch, showHelp]);
+  }, [goNext, goPrev, saveCall, selectResult, form.result, openLeadEditor, openSearch, showHelp, editOpen]);
 
   /* ---------- derived ---------- */
 
@@ -415,6 +514,9 @@ export function PhoningPage() {
                     {LANGUAGES[current.language].label}
                   </Badge>
                 )}
+                {current?.dnc === 1 && (
+                  <Badge variant="destructive"><Ban className="h-3 w-3 mr-1" /> Ne pas appeler — à valider</Badge>
+                )}
               </div>
 
               {/* Contact actions */}
@@ -439,6 +541,9 @@ export function PhoningPage() {
                     </a>
                   </Button>
                 )}
+                <Button variant="outline" onClick={openLeadEditor} title="Modifier le lead (E)">
+                  <Edit className="h-4 w-4 mr-2" /> Modifier
+                </Button>
                 {current?.siteUrl && (
                   <Button asChild variant="ghost">
                     <a href={current.siteUrl} target="_blank" rel="noopener noreferrer">
@@ -476,6 +581,14 @@ export function PhoningPage() {
             </CardContent>
           </Card>
 
+          <ContactEditDialog
+            open={editOpen}
+            contact={current}
+            isAdmin={isAdmin}
+            onClose={() => setEditOpen(false)}
+            onSaved={handleLeadSaved}
+          />
+
           {/* Call form */}
           <Card>
             <CardHeader className="pb-3">
@@ -496,7 +609,7 @@ export function PhoningPage() {
                     key={key}
                     variant={form.result === key ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => { markInteracting(); setForm(prev => ({ ...prev, result: key })); }}
+                    onClick={() => selectResult(key)}
                   >
                     <span className="text-xs opacity-60 mr-1">{i + 1}</span>
                     {CALL_RESULTS[key]}
@@ -517,7 +630,19 @@ export function PhoningPage() {
                     {Object.entries(OBJECTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Select>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="ph-stage" className="text-sm font-medium">Stage après appel</label>
+                  <Select
+                    id="ph-stage"
+                    className="mt-1"
+                    value={form.stage}
+                    onChange={e => { markInteracting(); setForm({ ...form, stage: e.target.value, stageTouched: true }); }}
+                  >
+                    {Object.entries(STAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">Proposé automatiquement, modifiable.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:col-span-2">
                   <div>
                     <label htmlFor="ph-nextstep" className="text-sm font-medium">Prochaine étape</label>
                     <Input
@@ -624,6 +749,7 @@ export function PhoningPage() {
                 ['↑ ← ou K', 'Prospect précédent'],
                 ['Entrée', 'Enregistrer et passer au suivant'],
                 ['1 à 5', 'Résultat rapide'],
+                ['E', 'Modifier le lead'],
                 ['G', 'Recherche Google'],
                 ['Passer', 'Ne rien noter, passer au suivant'],
                 ['?', 'Fermer cette aide'],
