@@ -38,35 +38,70 @@ const TABLES = [
 const BACKUP_ROOT = 'backups';
 
 /**
- * PG* variables win over DATABASE_URL on purpose.
+ * Resolve which Postgres to talk to.
  *
- * Railway injects DATABASE_URL pointing at its *internal* TCP proxy
- * (localhost:5432), which is unreachable from a developer machine and only
- * works inside the service container. The PG* variables are the public ones
- * copied from `railway variables`, so they must be preferred when running a
- * backup/restore locally.
+ * Railway splits its endpoints in two and this bit us before:
+ *   - DATABASE_URL -> postgres.railway.internal, reachable ONLY from inside the
+ *     service container. Running a backup from a laptop with it fails.
+ *   - DATABASE_PUBLIC_URL -> *.proxy.rlwy.net, reachable from anywhere.
+ *
+ * The PG* variables belong to the *internal* endpoint, so preferring them
+ * (as an earlier version of this script did) would have picked the host that
+ * cannot answer a local request. Precedence therefore depends on where the
+ * script runs:
+ *
+ *   1. BACKUP_DATABASE_URL  explicit override, always wins
+ *   2. inside Railway       DATABASE_URL (internal, fastest)
+ *   3. outside Railway      DATABASE_PUBLIC_URL, then PG*, then DATABASE_URL
  */
 export function connection() {
-  const { DATABASE_URL, PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD } = process.env;
-  if (PGHOST && PGUSER) {
-    return {
-      host: PGHOST,
-      port: Number(PGPORT || 5432),
-      user: PGUSER,
-      database: PGDATABASE || 'railway',
-      password: PGPASSWORD,
-      ssl: { rejectUnauthorized: false },
-    };
+  const {
+    BACKUP_DATABASE_URL, DATABASE_PUBLIC_URL, DATABASE_URL,
+    PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD,
+    RAILWAY_ENVIRONMENT,
+  } = process.env;
+
+  const insideRailway = Boolean(RAILWAY_ENVIRONMENT);
+  const fromUrl = (u) => ({ connectionString: u, ssl: { rejectUnauthorized: false } });
+  const fromPg = () => ({
+    host: PGHOST,
+    port: Number(PGPORT || 5432),
+    user: PGUSER,
+    database: PGDATABASE || 'railway',
+    password: PGPASSWORD,
+    ssl: { rejectUnauthorized: false },
+  });
+
+  if (BACKUP_DATABASE_URL) return fromUrl(BACKUP_DATABASE_URL);
+
+  if (insideRailway) {
+    if (DATABASE_URL) return fromUrl(DATABASE_URL);
+    if (PGHOST && PGUSER) return fromPg();
+  } else {
+    if (DATABASE_PUBLIC_URL) return fromUrl(DATABASE_PUBLIC_URL);
+    if (PGHOST && PGUSER) return fromPg();
+    if (DATABASE_URL) return fromUrl(DATABASE_URL);
   }
-  if (DATABASE_URL) {
-    return { connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } };
-  }
+
   console.error(
-    'Connexion requise :\n' +
-    '  export PGHOST=... PGPORT=5432 PGUSER=postgres PGDATABASE=railway PGPASSWORD=...\n' +
-    '  (ou DATABASE_URL=... pour un run depuis le conteneur Railway)',
+    'Connexion Postgres introuvable.\n' +
+    (insideRailway
+      ? '  Dans Railway : vérifie DATABASE_URL du service.\n'
+      : '  En local :\n' +
+        '    railway variables --service Postgres   puis exporte DATABASE_PUBLIC_URL\n' +
+        '    (le proxy TCP public doit être activé dans le dashboard Railway)\n') +
+    '  Ou force explicitement : BACKUP_DATABASE_URL=postgresql://... npm run backup:db',
   );
   process.exit(2);
+}
+
+/** Human readable target, for the check command. */
+export function describeTarget() {
+  const c = connection();
+  const url = c.connectionString
+    ? new URL(c.connectionString)
+    : { hostname: c.host, port: c.port, pathname: '/' + c.database };
+  return `${url.hostname}:${url.port || 5432}${url.pathname}`;
 }
 
 async function connect() {
@@ -169,6 +204,29 @@ async function latestBackup() {
 
 async function main() {
   const [command, arg] = process.argv.slice(2);
+
+  // Print the resolved target and reachability without dumping anything. A
+  // backup that silently targets the wrong database is worse than no backup.
+  if (command === 'check') {
+    const target = describeTarget();
+    console.log(`  Cible     : ${target}`);
+    console.log(`  Contexte  : ${process.env.RAILWAY_ENVIRONMENT ? 'Railway (interne)' : 'local'}`);
+    try {
+      const client = await connect();
+      const { rows } = await client.query('SELECT current_database() AS db, version() AS v');
+      const counts = await client.query(
+        `SELECT count(*)::int AS contacts FROM contacts`,
+      ).catch(() => null);
+      await client.end();
+      console.log(`  Connexion : OK (${rows[0].db})`);
+      if (counts) console.log(`  Contacts  : ${counts.rows[0].contacts}`);
+    } catch (err) {
+      console.error(`  Connexion : ECHEC - ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
   if (command === 'restore' || command === '--restore') {
     const dir = arg && !arg.startsWith('--') ? arg : await latestBackup();
     if (!dir) { console.error('Aucune sauvegarde trouvée.'); process.exit(1); }
