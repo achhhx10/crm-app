@@ -18,6 +18,7 @@
  * Prefer enabling the automated backups offered by Railway on the Postgres
  * plugin; this script is the portable fallback you can run on demand.
  */
+import { createHash } from 'node:crypto';
 import pg from 'pg';
 import { mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -38,6 +39,28 @@ const TABLES = [
 // Configurable so a Railway volume can be mounted at the dump location.
 // Relative to the process cwd by default, which is /app in the container.
 const BACKUP_ROOT = process.env.BACKUP_ROOT || 'backups';
+
+/**
+ * Guard against a half-filled connection string.
+ *
+ * Copying a documented placeholder such as `postgresql://...` is the obvious
+ * mistake here, and it used to surface as a raw `TypeError: Invalid URL` from
+ * deep inside node:internal/url, which says nothing about the real problem.
+ */
+function parseConnectionUrl(raw, label) {
+  try {
+    return new URL(raw);
+  } catch {
+    console.error(
+      `${label} est invalide.\n` +
+      `  Recu : ${raw.slice(0, 40)}\n` +
+      `  Railway cree DATABASE_PUBLIC_URL automatiquement apres avoir active le\n` +
+      `  proxy TCP public. Si la variable est absente, reconstruisez l'URL :\n` +
+      `    postgresql://<user>:<password>@<RAILWAY_TCP_PROXY_DOMAIN>:<RAILWAY_TCP_PROXY_PORT>/<PGDATABASE>`,
+    );
+    process.exit(2);
+  }
+}
 
 // Cron jobs must terminate, and a volume will fill up eventually.
 const BACKUP_KEEP = Number(process.env.BACKUP_KEEP || 14);
@@ -104,13 +127,15 @@ export function connection() {
 export function describeTarget() {
   const c = connection();
   const url = c.connectionString
-    ? new URL(c.connectionString)
+    ? parseConnectionUrl(c.connectionString, 'DATABASE_PUBLIC_URL')
     : { hostname: c.host, port: c.port, pathname: '/' + c.database };
   return `${url.hostname}:${url.port || 5432}${url.pathname}`;
 }
 
 async function connect() {
-  const client = new Client(connection());
+  const cfg = connection();
+  if (cfg.connectionString) parseConnectionUrl(cfg.connectionString, 'DATABASE_PUBLIC_URL');
+  const client = new Client(cfg);
   await client.connect();
   return client;
 }
@@ -121,7 +146,7 @@ async function backup() {
   await mkdir(dir, { recursive: true });
 
   const client = await connect();
-  const manifest = { createdAt: new Date().toISOString(), tables: {} };
+  const manifest = { createdAt: new Date().toISOString(), tables: {}, checksums: {} };
   try {
     // Record the shape of the database so a restore into a drifted schema is visible.
     const cols = await client.query(`
@@ -134,8 +159,12 @@ async function backup() {
 
     for (const table of TABLES) {
       const res = await client.query(`SELECT * FROM "${table}"`);
-      await writeFile(join(dir, `${table}.json`), JSON.stringify(res.rows));
+      const payload = JSON.stringify(res.rows);
+      await writeFile(join(dir, `${table}.json`), payload);
       manifest.tables[table] = res.rows.length;
+      // Checksum so a truncated or half-copied dump is caught before a
+      // destructive restore, not discovered halfway through it.
+      manifest.checksums[table] = createHash('sha256').update(payload).digest('hex');
       console.log(`  ${table.padEnd(10)} ${String(res.rows.length).padStart(7)} lignes`);
     }
   } finally {
@@ -153,7 +182,7 @@ async function backup() {
  * Restore order matters: children reference contacts, which reference users.
  * Everything runs in one transaction, so a failure leaves the database untouched.
  */
-async function restore(dir, dryRun) {
+async function restore(dir, dryRun, allowDrift = false) {
   const manifestPath = join(dir, 'manifest.json');
   if (!existsSync(manifestPath)) {
     console.error(`Pas de manifest.json dans ${dir}.`);
@@ -163,12 +192,101 @@ async function restore(dir, dryRun) {
   console.log(`Sauvegarde du ${manifest.createdAt}`);
   for (const [t, n] of Object.entries(manifest.tables)) console.log(`  ${t.padEnd(10)} ${n} lignes`);
 
+  const client = await connect();
+
   if (dryRun) {
-    console.log('\nSimulation : aucune écriture effectuée.');
-    return;
+    // The dry run used to only echo the manifest, so every real failure mode
+    // (corrupt file, schema drift, wrong database) surfaced *after* the
+    // DELETE had already run. It now checks the things that can actually break
+    // a restore, then stops without writing.
+    let problems = 0;
+    console.log('');
+
+    const schemaPath = join(dir, 'schema.json');
+    if (existsSync(schemaPath)) {
+      const dumpCols = new Set(JSON.parse(await readFile(schemaPath, 'utf8')).map(c => c.column_name));
+      const live = await client.query(`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'contacts'
+      `);
+      const liveCols = new Set(live.rows.map(r => r.column_name));
+      const missing = [...liveCols].filter(c => !dumpCols.has(c));
+      if (missing.length) {
+        console.error(`  ✗ colonnes présentes en base mais absentes du dump : ${missing.join(', ')}`);
+        console.error('    une restauration echouerait sur une colonne inconnue');
+        problems += 1;
+      } else {
+        console.log('  ✓ schema : toutes les colonnes de la base sont presentes dans le dump');
+      }
+    }
+
+    for (const [table, expected] of Object.entries(manifest.tables)) {
+      const file = join(dir, `${table}.json`);
+      if (!existsSync(file)) {
+        console.error(`  ✗ ${table}.json manquant`);
+        problems += 1;
+        continue;
+      }
+      const raw = await readFile(file, 'utf8');
+      const sum = manifest.checksums?.[table];
+      if (sum) {
+        const actual = createHash('sha256').update(raw).digest('hex');
+        if (actual !== sum) {
+          console.error(`  ✗ ${table}.json : checksum invalide (dump corrompu ou tronque)`);
+          problems += 1;
+          continue;
+        }
+      }
+      let rows;
+      try {
+        rows = JSON.parse(raw);
+      } catch {
+        console.error(`  ✗ ${table}.json : JSON illisible`);
+        problems += 1;
+        continue;
+      }
+      if (rows.length !== expected) {
+        console.error(`  ✗ ${table}.json : ${rows.length} lignes, manifeste annonce ${expected}`);
+        problems += 1;
+        continue;
+      }
+      const liveRows = await client
+        .query(`SELECT count(*)::int AS n FROM "${table}"`)
+        .then(r => r.rows[0].n)
+        .catch(() => null);
+
+      // A dump that is internally consistent but far smaller than the live
+      // table is the dangerous case: checksums pass, the manifest agrees, and
+      // the restore would still wipe most of the real rows. New rows since the
+      // snapshot are normal, so only a gross shortfall is fatal.
+      if (liveRows !== null && liveRows > 0 && rows.length < liveRows * 0.5) {
+        console.error(
+          `  ✗ ${table.padEnd(10)} ${rows.length} lignes dans le dump pour ${liveRows} en base :` +
+          ' incohérence majeure',
+        );
+        if (!allowDrift) {
+          console.error('    une restauration remplacerait la base par un jeu de donnees bien plus petit');
+          console.error('    corrige le dump, ou passe --allow-drift si c est voulu');
+          problems += 1;
+          continue;
+        }
+        console.error('    continue car --allow-drift a ete passe');
+      }
+      const drift = liveRows === null || liveRows === rows.length ? '' : ` (base actuelle : ${liveRows})`;
+      console.log(`  ✓ ${table.padEnd(10)} ${String(rows.length).padStart(7)} lignes, checksum valide${drift}`);
+    }
+
+    const target = describeTarget();
+    console.log(`\n  Cible de restauration : ${target}`);
+    console.log('  ATTENTION : une restauration reelle DELETE puis reecrit chaque table');
+    console.log('             ci-dessus. La base de production serait remplacee.');
+    await client.end();
+    console.log(problems === 0
+      ? '\nSimulation terminee : aucune ecriture effectuee, sauvegarde exploitable.'
+      : `\nSimulation terminee : ${problems} probleme(s), sauvegarde NON exploitable en l'etat.`);
+    process.exit(problems === 0 ? 0 : 1);
   }
 
-  const client = await connect();
   try {
     await client.query('BEGIN');
     for (const table of [...TABLES].reverse()) {
@@ -259,7 +377,7 @@ async function main() {
   if (command === 'restore' || command === '--restore') {
     const dir = arg && !arg.startsWith('--') ? arg : await latestBackup();
     if (!dir) { console.error('Aucune sauvegarde trouvée.'); process.exit(1); }
-    await restore(dir, process.argv.includes('--dry-run'));
+    await restore(dir, process.argv.includes('--dry-run'), process.argv.includes('--allow-drift'));
     return;
   }
 
