@@ -19,7 +19,7 @@
  * plugin; this script is the portable fallback you can run on demand.
  */
 import pg from 'pg';
-import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -35,7 +35,12 @@ const TABLES = [
   'users',
 ];
 
-const BACKUP_ROOT = 'backups';
+// Configurable so a Railway volume can be mounted at the dump location.
+// Relative to the process cwd by default, which is /app in the container.
+const BACKUP_ROOT = process.env.BACKUP_ROOT || 'backups';
+
+// Cron jobs must terminate, and a volume will fill up eventually.
+const BACKUP_KEEP = Number(process.env.BACKUP_KEEP || 14);
 
 /**
  * Resolve which Postgres to talk to.
@@ -193,6 +198,30 @@ async function restore(dir, dryRun) {
   console.log('\nRestauration terminée.');
 }
 
+/**
+ * Keep only the newest BACKUP_KEEP dumps.
+ *
+ * Without this a daily cron silently fills the volume until writes fail, which
+ * is how you end up with a backup job that has not produced a usable backup for
+ * weeks. The newest directory is never removed, and `lock`-style retention is
+ * out of scope: every dump here is disposable by construction.
+ */
+async function prune() {
+  if (!existsSync(BACKUP_ROOT)) return;
+  const dirs = (await readdir(BACKUP_ROOT, { withFileTypes: true }))
+    .filter(e => e.isDirectory() && e.name.startsWith('pg-'))
+    .map(e => e.name)
+    .sort();
+  const excess = dirs.length - BACKUP_KEEP;
+  if (excess <= 0) return;
+  for (const name of dirs.slice(0, excess)) {
+    const target = join(BACKUP_ROOT, name);
+    await rm(target, { recursive: true, force: true });
+    console.log(`  purge    ${name}`);
+  }
+  console.log(`  ${excess} sauvegarde(s) purgée(s), ${BACKUP_KEEP} conservée(s)`);
+}
+
 async function latestBackup() {
   if (!existsSync(BACKUP_ROOT)) return null;
   const entries = (await readdir(BACKUP_ROOT, { withFileTypes: true }))
@@ -233,7 +262,14 @@ async function main() {
     await restore(dir, process.argv.includes('--dry-run'));
     return;
   }
+
+  if (command === 'prune') {
+    await prune();
+    return;
+  }
+
   await backup();
+  await prune();
 }
 
 // Same guard as scripts/seed-demo.mjs so `connection()` stays unit-testable.
