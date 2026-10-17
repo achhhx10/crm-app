@@ -245,27 +245,10 @@ export function ContactsPage() {
   const assigneeFilterUrl = urlStr('assignedTo', 'all');
 
   // Any filter change resets to page 1; a page change keeps the filters.
-  const setFilter = useCallback((key: string) => (value: string | null) => {
-    patch({ [key]: value, page: null });
-  }, [patch]);
   const setPage = useCallback((value: number) => {
     patch({ page: value === 1 ? null : String(value) });
   }, [patch]);
   const setSearch = useCallback((value: string) => patch({ q: value || null, page: null }), [patch]);
-  const setStageFilter = setFilter('stage');
-  const setActivityFilter = setFilter('activity');
-  const setMinRating = setFilter('minRating');
-  const setHasSiteFilter = setFilter('hasSite');
-  const setCityFilter = setFilter('city');
-  const setLanguageFilter = setFilter('language');
-  const setReachFilter = setFilter('reach');
-  const setHasReviewsFilter = setFilter('hasReviews');
-  const setMinReviews = setFilter('minReviews');
-  const setActivePreset = setFilter('preset');
-  const setDncFilter = setFilter('dnc');
-  const setCalledFilter = setFilter('called');
-  const setArchivedFilter = setFilter('archived');
-  const setAssigneeFilter = setFilter('assignedTo');
   const [activities, setActivities] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -276,8 +259,6 @@ export function ContactsPage() {
   const [confirmBulkArchive, setConfirmBulkArchive] = useState(false);
   const sortField = urlStr('sortBy', 'opportunity');
   const sortDir = urlStr('sortDir', 'desc') as 'asc' | 'desc';
-  const setSortField = useCallback((v: string) => patch({ sortBy: v === 'opportunity' ? null : v }), [patch]);
-  const setSortDir = useCallback((v: 'asc' | 'desc') => patch({ sortDir: v === 'desc' ? null : v }), [patch]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(() => {
     try {
@@ -377,12 +358,13 @@ export function ContactsPage() {
 
   const handleSort = (field: string) => {
     if (sortField === field) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+      // Un seul patch par clic : deux setSearchParams dans le même tick sous
+      // react-router v7 s'écrasent mutuellement et la mise à jour est perdue.
+      const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+      patch({ sortDir: nextDir === 'asc' ? 'asc' : null, page: null });
     } else {
-      setSortField(field);
-      setSortDir('asc');
+      patch({ sortBy: field === 'opportunity' ? null : field, sortDir: 'asc', page: null });
     }
-    setPage(1);
   };
 
   const handleColResize = (field: string, w: number) => {
@@ -581,7 +563,7 @@ export function ContactsPage() {
         <Segmented
           ariaLabel="Joignabilité"
           value={reachFilter}
-          onChange={(v) => { setActivePreset(null); setReachFilter(v); setPage(1); }}
+          onChange={(v) => patch({ preset: null, reach: v, page: null })}
           options={[
             { value: 'all', label: 'Tous' },
             { value: 'true', label: 'Joignables' },
@@ -606,24 +588,24 @@ export function ContactsPage() {
                 />
               </div>
             </div>
-            <Select className="w-auto min-w-[10rem]" value={stageFilter} onChange={(e) => { setActivePreset(null); setStageFilter(e.target.value); setPage(1); }}>
+            <Select id="f-stage" className="w-auto min-w-[10rem]" value={stageFilter} onChange={(e) => patch({ preset: null, stage: e.target.value, page: null })}>
               <option value="all">Tous les stages</option>
               {Object.entries(STAGES).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
             </Select>
-            <Select className="w-auto min-w-[9rem]" value={languageFilter} onChange={(e) => { setActivePreset(null); setLanguageFilter(e.target.value); setPage(1); }}>
+            <Select className="w-auto min-w-[9rem]" value={languageFilter} onChange={(e) => patch({ preset: null, language: e.target.value, page: null })}>
               <option value="all">Toutes langues</option>
               {Object.entries(LANGUAGES).map(([key, l]) => <option key={key} value={key}>{l.label}</option>)}
               <option value="__empty__">Indéterminée</option>
             </Select>
             {isAdmin ? (
-              <Select className="w-auto min-w-[10rem]" value={assigneeFilter} onChange={(e) => { setActivePreset(null); setAssigneeFilter(e.target.value); setPage(1); }}
+              <Select className="w-auto min-w-[10rem]" value={assigneeFilter} onChange={(e) => patch({ preset: null, assignedTo: e.target.value, page: null })}
                 aria-label="Filtrer par commercial">
                 <option value="all">Tous les commerciaux</option>
                 <option value="unassigned">Non assignés</option>
                 {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
               </Select>
             ) : null}
-            <Select className="w-auto min-w-[9rem]" value={archivedFilter} onChange={(e) => { setActivePreset(null); setArchivedFilter(e.target.value); setPage(1); }}
+            <Select className="w-auto min-w-[9rem]" value={archivedFilter} onChange={(e) => patch({ preset: null, archived: e.target.value, page: null })}
               aria-label="Filtrer les prospects archivés">
               <option value="exclude">Hors archives</option>
               <option value="only">Archives uniquement</option>
@@ -642,7 +624,7 @@ export function ContactsPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2 border-t pt-3">
               <div>
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">Historique d'appel</span>
-                <Select value={calledFilter} onChange={(e) => { setActivePreset(null); setCalledFilter(e.target.value); setPage(1); }}
+                <Select value={calledFilter} onChange={(e) => patch({ preset: null, called: e.target.value, page: null })}
                   aria-label="Filtrer par historique d'appel">
                   <option value="all">Tous</option>
                   <option value="never">Jamais appelés</option>
@@ -651,7 +633,7 @@ export function ContactsPage() {
               </div>
               <div>
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">Appelabilité</span>
-                <Select value={dncFilter} onChange={(e) => { setActivePreset(null); setDncFilter(e.target.value); setPage(1); }}
+                <Select value={dncFilter} onChange={(e) => patch({ preset: null, dnc: e.target.value, page: null })}
                   aria-label="Filtrer les prospects ayant refusé un appel">
                   <option value="exclude">Appelables uniquement</option>
                   <option value="only">Refus d'appel uniquement</option>
@@ -660,14 +642,14 @@ export function ContactsPage() {
               </div>
               <div>
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">Activité</span>
-                <Select value={activityFilter} onChange={(e) => { setActivePreset(null); setActivityFilter(e.target.value); setPage(1); }}>
+                <Select value={activityFilter} onChange={(e) => patch({ preset: null, activity: e.target.value, page: null })}>
                   <option value="all">Toutes activités</option>
                   {activities.map(a => <option key={a} value={a}>{a}</option>)}
                 </Select>
               </div>
               <div>
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">Site</span>
-                <Select value={hasSiteFilter} onChange={(e) => { setActivePreset(null); setHasSiteFilter(e.target.value); setPage(1); }}>
+                <Select value={hasSiteFilter} onChange={(e) => patch({ preset: null, hasSite: e.target.value, page: null })}>
                   <option value="all">Tous sites</option>
                   <option value="pas_de_site">Pas de site</option>
                   <option value="site_fonctionnel">Site fonctionnel</option>
@@ -676,7 +658,7 @@ export function ContactsPage() {
               </div>
               <div>
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">Ville</span>
-                <Select value={cityFilter} onChange={(e) => { setActivePreset(null); setCityFilter(e.target.value); setPage(1); }}>
+                <Select value={cityFilter} onChange={(e) => patch({ preset: null, city: e.target.value, page: null })}>
                   <option value="all">Toutes villes</option>
                   <option value="__empty__">Sans ville</option>
                   {cities.map(c => <option key={c} value={c}>{c}</option>)}
@@ -686,7 +668,12 @@ export function ContactsPage() {
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">Avis</span>
                 <Select
                   value={hasReviewsFilter === 'all' ? 'all' : (minReviews || 'true')}
-                  onChange={(e) => { setActivePreset(null); const v = e.target.value; if (v === 'all') { setHasReviewsFilter('all'); setMinReviews(''); } else if (v === 'true') { setHasReviewsFilter('true'); setMinReviews(''); } else { setHasReviewsFilter('true'); setMinReviews(v); } setPage(1); }}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    patch(v === 'all'
+                      ? { preset: null, hasReviews: null, minReviews: null, page: null }
+                      : { preset: null, hasReviews: 'true', minReviews: v === 'true' ? null : v, page: null });
+                  }}
                 >
                   <option value="all">Tous avis</option>
                   <option value="true">Avec avis</option>
@@ -699,7 +686,7 @@ export function ContactsPage() {
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">Note min.</span>
                 <Input
                   type="number" min="0" max="5" step="0.5" placeholder="0"
-                  value={minRating} onChange={(e) => { setActivePreset(null); setMinRating(e.target.value); setPage(1); }}
+                  value={minRating} onChange={(e) => patch({ preset: null, minRating: e.target.value, page: null })}
                 />
               </div>
             </div>
