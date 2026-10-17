@@ -10,8 +10,7 @@ import { Dialog, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
 import { ContactEditDialog } from '../components/contacts/ContactEditDialog';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
-import { CallFormDialog } from '../components/ui/call-form-dialog';
-import { Plus, Search, Phone, Edit, Eye, EyeOff, ChevronUp, ChevronDown, Download, Archive, ArrowUpDown, X, Globe, GlobeLock, Flame, Gem, RefreshCw, Ban, MapPinOff, Star } from 'lucide-react';
+import { Plus, Search, Edit, Eye, EyeOff, ChevronUp, ChevronDown, Download, Archive, ArrowUpDown, X, Globe, RotateCcw, Flame, Gem, RefreshCw, Ban, MapPinOff, Star } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { STAGES, OBJECTIONS, CALL_RESULTS, LANGUAGES, formatDate, opportunityScore, opportunityMeta } from '../lib/utils';
 import { StageBadge, DncBadge } from '../components/ui/status-badges';
@@ -40,9 +39,9 @@ const defaultColWidths: Record<string, number> = {
   rating: 80,
   opportunity: 110,
   stage: 130,
-  site: 120,
-  lastCall: 160,
-  actions: 120,
+  site: 84,
+  lastCall: 200,
+  actions: 72,
 };
 
 function useColumnWidths() {
@@ -124,6 +123,87 @@ function ResizableTh({
   );
 }
 
+function RowActionsMenu({
+  contact,
+  isHidden,
+  isAdmin,
+  onView,
+  onEdit,
+  onHide,
+  onArchive,
+  onRestore,
+}: {
+  contact: Contact;
+  isHidden: boolean;
+  isAdmin: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onHide: () => void;
+  onArchive: () => void;
+  onRestore: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickWhileOpen = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyWhileOpen = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onClickWhileOpen);
+    document.addEventListener('keydown', onKeyWhileOpen);
+    return () => {
+      document.removeEventListener('mousedown', onClickWhileOpen);
+      document.removeEventListener('keydown', onKeyWhileOpen);
+    };
+  }, [open]);
+
+  const item = (label: string, icon: React.ReactNode, action: () => void, className = '') => (
+    <button
+      type="button"
+      className={`flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 ${className}`}
+      onClick={() => { setOpen(false); action(); }}
+    >
+      {icon}
+      <span className="truncate">{label}</span>
+    </button>
+  );
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="min-h-[44px] min-w-[44px] h-7 w-7"
+        aria-label="Actions du prospect"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+      >
+        <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-8 z-20 w-52 rounded-md border bg-card py-1 shadow-lg">
+          {item('Voir le prospect', <Eye className="h-4 w-4" />, onView)}
+          {item('Modifier le prospect', <Edit className="h-4 w-4" />, onEdit)}
+          {item(
+            isHidden ? 'Afficher le prospect' : 'Masquer le prospect',
+            isHidden ? <Eye className="h-4 w-4 text-success" /> : <EyeOff className="h-4 w-4" />,
+            onHide,
+          )}
+          {isAdmin && (
+            contact.archivedAt
+              ? item('Restaurer le prospect', <RotateCcw className="h-4 w-4 text-success" />, onRestore)
+              : item('Archiver le prospect', <Archive className="h-4 w-4 text-muted-foreground" />, onArchive)
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ContactsPage() {
   const { toast } = useToast();
   const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
@@ -192,8 +272,6 @@ export function ContactsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [quickCallContact, setQuickCallContact] = useState<Contact | null>(null);
-  const [quickCallStartedAt, setQuickCallStartedAt] = useState<number>(Date.now());
   const [archiveTarget, setArchiveTarget] = useState<number | null>(null);
   const [confirmBulkArchive, setConfirmBulkArchive] = useState(false);
   const sortField = urlStr('sortBy', 'opportunity');
@@ -749,9 +827,15 @@ export function ContactsPage() {
                       <StageBadge stage={contact.stage} />
                     </td>
                     <td className="px-3 py-2" style={{ width: widths.site }}>
-                      {contact.hasSite === 'pas_de_site' && <span className="flex items-center gap-1 text-xs text-destructive"><GlobeLock className="h-3 w-3" /> Pas de site</span>}
-                      {contact.hasSite === 'site_vetuste' && <span className="flex items-center gap-1 text-xs text-warning"><Globe className="h-3 w-3" /> Vétuste</span>}
-                      {contact.hasSite === 'site_fonctionnel' && <span className="flex items-center gap-1 text-xs text-success"><Globe className="h-3 w-3" /> Site OK</span>}
+                      {contact.hasSite === 'pas_de_site' && (
+                        <span className="inline-flex text-destructive" title="Pas de site"><Globe className="h-4 w-4" /><span className="sr-only">Pas de site</span></span>
+                      )}
+                      {contact.hasSite === 'site_vetuste' && (
+                        <span className="inline-flex text-warning" title="Site vétuste (refonte)"><Globe className="h-4 w-4" /><span className="sr-only">Site vétuste</span></span>
+                      )}
+                      {contact.hasSite === 'site_fonctionnel' && (
+                        <span className="inline-flex text-success" title="Site fonctionnel"><Globe className="h-4 w-4" /><span className="sr-only">Site fonctionnel</span></span>
+                      )}
                       {!contact.hasSite && '-'}
                     </td>
                     <td className="px-3 py-2" style={{ width: widths.lastCall }}>
@@ -767,45 +851,17 @@ export function ContactsPage() {
                         <span className="text-xs text-muted-foreground">Jamais appelé</span>
                       )}
                     </td>
-                    <td className="px-2 py-2">
-                      <div className="flex justify-end gap-0.5">
-                        {contact.phone && (
-                          <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" aria-label="Enregistrer un appel"
-                            onClick={() => { setQuickCallContact(contact); setQuickCallStartedAt(Date.now()); }}>
-                            <Phone className="h-3.5 w-3.5 text-success" />
-                          </Button>
-                        )}
-                        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" aria-label="Voir le prospect"
-                          onClick={() => setSelectedContact(contact)}>
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" aria-label="Modifier le prospect"
-                          onClick={() => handleEdit(contact)}>
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7"
-                          aria-label={isHidden ? 'Afficher le prospect' : 'Masquer le prospect'}
-                          onClick={() => toggleHide(contact.id)}>
-                          {isHidden ? <Eye className="h-3.5 w-3.5 text-muted-foreground" /> : <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />}
-                        </Button>
-                        {isAdmin && (
-                          contact.archivedAt ? (
-                            <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7"
-                              aria-label="Restaurer le prospect"
-                              title="Restaurer ce prospect"
-                              onClick={() => handleRestore(contact.id)}>
-                              <span className="text-success text-xs">↩</span>
-                            </Button>
-                          ) : (
-                            <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7"
-                              aria-label="Archiver le prospect"
-                              title="Archiver (l'historique est conservé)"
-                              onClick={() => handleArchive(contact.id)}>
-                              <Archive className="h-3.5 w-3.5 text-muted-foreground" />
-                            </Button>
-                          )
-                        )}
-                      </div>
+                    <td className="px-2 py-2 text-right">
+                      <RowActionsMenu
+                        contact={contact}
+                        isHidden={isHidden}
+                        isAdmin={isAdmin}
+                        onView={() => setSelectedContact(contact)}
+                        onEdit={() => handleEdit(contact)}
+                        onHide={() => toggleHide(contact.id)}
+                        onArchive={() => handleArchive(contact.id)}
+                        onRestore={() => handleRestore(contact.id)}
+                      />
                     </td>
                   </tr>
                 );
@@ -864,20 +920,6 @@ export function ContactsPage() {
           </div>
         )}
       </Dialog>
-
-      {/* Quick Call Dialog */}
-      <CallFormDialog
-        open={!!quickCallContact}
-        contact={quickCallContact}
-        defaultResult="pas_decroche"
-        defaultDuration={
-          quickCallContact && Date.now() - quickCallStartedAt > 0
-            ? String(Math.floor((Date.now() - quickCallStartedAt) / 1000))
-            : ''
-        }
-        onClose={() => { setQuickCallContact(null); setQuickCallStartedAt(Date.now()); }}
-        onSaved={loadContacts}
-      />
 
       <ConfirmDialog
         open={archiveTarget !== null}

@@ -116,6 +116,36 @@ ok('phoning : carte "File d\'appels"', txt.includes("File d'appels"));
 ok('phoning : libellés de grille', txt.includes('Stage') && txt.includes('Langue'));
 await page.screenshot({ path: '.shots/filters-phoning.png' });
 
+// Table prospects : site icon-only + menu d'actions
+await gotoWithShell(`${APP}/contacts`);
+await new Promise(r => setTimeout(r, 2500));
+const tableText = await page.evaluate(() => {
+  const table = document.querySelector('table');
+  return table ? table.innerText : '';
+});
+ok('table : site picto seul (sr-only présent, textes enlevés)', await page.evaluate(() => {
+  const sr = [...document.querySelectorAll('table .sr-only')].map(s => s.textContent || '');
+  const globe = [...document.querySelectorAll('table svg')].filter(s => s.closest('td')?.querySelector('.sr-only')).length;
+  return sr.includes('Pas de site') && globe > 0;
+}));
+ok('table : pas de bouton appel rapide', await page.evaluate(() =>
+  ![...document.querySelectorAll('table button')].some(b => b.getAttribute('aria-label') === 'Enregistrer un appel')));
+ok('table : chevron actions par ligne', await page.evaluate(() =>
+  [...document.querySelectorAll('table button')].some(b => b.getAttribute('aria-label') === 'Actions du prospect')));
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll('table button')].find(b => b.getAttribute('aria-label') === 'Actions du prospect');
+  btn?.click();
+});
+await new Promise(r => setTimeout(r, 400));
+txt = await page.evaluate(() => document.body.innerText);
+ok('table : menu ouvert avec Voir/Modifier/Masquer', txt.includes('Voir le prospect') && txt.includes('Modifier le prospect') && txt.includes('Masquer le prospect'));
+await page.screenshot({ path: '.shots/filters-contacts-table.png' });
+await page.evaluate(() => {
+  document.querySelector('table')?.closest('.overflow-x-auto')?.scrollTo({ left: 999999 });
+});
+await new Promise(r => setTimeout(r, 400));
+await page.screenshot({ path: '.shots/filters-contacts-droite.png' });
+
 await browser.close();
 rmSync(base, { recursive: true, force: true, maxRetries: 5 });
 if (failed) {
