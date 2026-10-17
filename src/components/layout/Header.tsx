@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { useMotionValueEvent, useScroll } from 'motion/react';
-import { Menu } from 'lucide-react';
+import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const pageTitles: Record<string, string> = {
@@ -21,9 +21,12 @@ const pageTitles: Record<string, string> = {
 
 interface HeaderProps {
   onMenuClick?: () => void;
+  /** Desktop-only rail/expand toggle; the mobile drawer keeps its own button. */
+  onToggleCollapse?: () => void;
+  collapsed?: boolean;
 }
 
-export function Header({ onMenuClick }: HeaderProps) {
+export function Header({ onMenuClick, onToggleCollapse, collapsed = false }: HeaderProps) {
   const location = useLocation();
   const { scrollY } = useScroll();
   const [scrolled, setScrolled] = React.useState(false);
@@ -50,6 +53,14 @@ export function Header({ onMenuClick }: HeaderProps) {
         className="mr-3 min-h-[44px] min-w-[44px] rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
       >
         <Menu className="h-5 w-5" />
+      </button>
+      <button
+        onClick={onToggleCollapse}
+        aria-label={collapsed ? 'Déplier la barre latérale' : 'Replier la barre latérale'}
+        aria-expanded={!collapsed}
+        className="mr-3 hidden min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:flex"
+      >
+        {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
       </button>
       <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
     </header>

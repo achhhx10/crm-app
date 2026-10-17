@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { GitBranch, Upload, Shield, LogOut, DollarSign, LayoutDashboard, Users, Phone, PhoneCall, Gift, BellRing } from 'lucide-react';
 import { DarkModeToggle } from '../ui/dark-mode-toggle';
 import { api } from '../../lib/api';
+import { cn } from '../../lib/utils';
 
 const mainNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Tableau de bord', end: true },
@@ -25,9 +26,15 @@ const adminNavItems = [
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
+  /**
+   * Icon-only rail on desktop, toggled from the Header. Every collapsed style
+   * is emitted as an `lg:` variant so the mobile drawer keeps full labels
+   * whatever this state is.
+   */
+  collapsed?: boolean;
 }
 
-export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+export function Sidebar({ isOpen = false, onClose, collapsed = false }: SidebarProps) {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
   const isAdmin = user.role === 'admin';
@@ -69,28 +76,46 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       to={item.to}
       end={item.end}
       onClick={handleNavClick}
+      title={collapsed ? item.label : undefined}
       className={({ isActive }) =>
-        `group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-200 ${
+        cn(
+          'group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors duration-200',
+          collapsed && 'lg:justify-center lg:px-0',
           isActive
-            ? 'bg-primary/10 text-primary'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-        }`
+            ? 'text-primary'
+            : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+        )
       }
     >
       {({ isActive }) => (
         <>
-          {isActive && (
-            <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
-          )}
-          <item.icon className="h-4 w-4 shrink-0" />
-          <span className="truncate">{item.label}</span>
+          <span
+            className={cn(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-200',
+              isActive
+                ? 'bg-primary/15 text-primary glow-primary'
+                : 'bg-muted/60 text-muted-foreground group-hover:bg-muted group-hover:text-foreground',
+            )}
+          >
+            <item.icon className="h-4 w-4" />
+          </span>
+          <span className={cn('truncate', collapsed && 'lg:hidden')}>{item.label}</span>
           {badge !== null && (
-            <span
-              className="ml-auto rounded-full bg-destructive px-2 py-0.5 text-xs font-semibold text-destructive-foreground tabular-nums"
-              aria-label={`${badge} relance(s) à faire`}
-            >
-              {badge > 99 ? '99+' : badge}
-            </span>
+            collapsed ? (
+              // Rail mode: a glowing dot instead of the counter; the exact count
+              // stays available because the visited page lists every callback.
+              <span
+                className="absolute right-2.5 top-2 hidden h-2.5 w-2.5 rounded-full bg-destructive text-destructive neon lg:block"
+                aria-label={`${badge} relance(s) à faire`}
+              />
+            ) : (
+              <span
+                className="ml-auto rounded-full bg-destructive px-2 py-0.5 text-xs font-semibold text-destructive-foreground tabular-nums"
+                aria-label={`${badge} relance(s) à faire`}
+              >
+                {badge > 99 ? '99+' : badge}
+              </span>
+            )
           )}
         </>
       )}
@@ -109,60 +134,83 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r bg-card transition-transform duration-200 ease-in-out lg:translate-x-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={cn(
+          'fixed left-0 top-0 z-40 flex h-screen w-64 transition-[transform,width] duration-200 ease-in-out lg:translate-x-0 dark:glass dark:glass-edge',
+          collapsed ? 'lg:w-[4.5rem]' : 'lg:w-64',
+          isOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
       >
-        <div className="flex h-16 items-center border-b px-6">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <span className="text-sm font-bold text-primary-foreground">CRM</span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className={cn('flex h-16 items-center gap-2.5 px-4', collapsed && 'lg:justify-center lg:px-0')}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary glow-primary">
+              <span className="text-[11px] font-bold text-primary-foreground">CRM</span>
             </div>
-            <span className="text-lg font-semibold tracking-tight">Prospection</span>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-6 overflow-y-auto p-4">
-          <div>
-            <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-              Principal
-            </p>
-            <div className="space-y-1">
-              {mainNavItems.map(renderLink)}
-            </div>
+            <span className={cn('text-lg font-semibold tracking-tight', collapsed && 'lg:hidden')}>
+              Prospection
+            </span>
           </div>
 
-          {isAdmin && (
+          {/* Account block, above the navigation like a user-centric shell. */}
+          <div className={cn('flex items-center gap-3 border-b px-4 pb-3', collapsed && 'lg:justify-center lg:px-0')}>
+            <div
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary"
+              title={collapsed ? (user.name || 'Utilisateur') : undefined}
+            >
+              {user.name?.charAt(0) || '?'}
+            </div>
+            <div className={cn('min-w-0 flex-1', collapsed && 'lg:hidden')}>
+              <p className="truncate text-sm font-medium leading-tight">{user.name || 'Utilisateur'}</p>
+              <p className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">
+                {isAdmin ? 'Admin' : 'Démarcheur'}
+              </p>
+            </div>
+          </div>
+
+          <nav className="flex-1 space-y-5 overflow-y-auto p-3">
             <div>
-              <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                Administration
+              <p className={cn(
+                'mb-2 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70',
+                collapsed && 'lg:hidden',
+              )}>
+                Principal
               </p>
               <div className="space-y-1">
-                {adminNavItems.map(renderLink)}
+                {mainNavItems.map(renderLink)}
               </div>
             </div>
-          )}
-        </nav>
 
-        <div className="border-t p-4">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-              <span className="text-sm font-medium text-primary">{user.name?.charAt(0) || '?'}</span>
+            {isAdmin && (
+              <div>
+                <p className={cn(
+                  'mb-2 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70',
+                  collapsed && 'lg:hidden',
+                )}>
+                  Administration
+                </p>
+                <div className="space-y-1">
+                  {adminNavItems.map(renderLink)}
+                </div>
+              </div>
+            )}
+          </nav>
+
+          <div className="border-t p-3">
+            <div className={cn('flex items-center gap-2', collapsed && 'lg:flex-col')}>
+              <button
+                onClick={handleLogout}
+                aria-label="Déconnexion"
+                title={collapsed ? 'Déconnexion' : undefined}
+                className={cn(
+                  'flex min-h-[44px] min-w-[44px] flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm text-muted-foreground transition-colors duration-200 hover:bg-destructive/10 hover:text-destructive',
+                  collapsed && 'lg:flex-none',
+                )}
+              >
+                <LogOut className="h-4 w-4 shrink-0" />
+                <span className={cn('whitespace-nowrap', collapsed && 'lg:hidden')}>Déconnexion</span>
+              </button>
+              <DarkModeToggle />
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{user.name || 'Utilisateur'}</p>
-              <p className="truncate text-xs text-muted-foreground">{user.email || ''}</p>
-            </div>
-            <DarkModeToggle />
           </div>
-          <button
-            onClick={handleLogout}
-            aria-label="Déconnexion"
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground"
-          >
-            <LogOut className="h-4 w-4" />
-            Déconnexion
-          </button>
         </div>
       </aside>
     </>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Sidebar } from './Sidebar';
@@ -7,14 +7,32 @@ import { SessionWarning } from '../SessionWarning';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Desktop-only preference (icon rail vs full sidebar), shared by the Header
+  // toggle, the Sidebar width and this content offset.
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('crm_sidebar_collapsed') === '1',
+  );
+
+  useEffect(() => {
+    localStorage.setItem('crm_sidebar_collapsed', collapsed ? '1' : '0');
+  }, [collapsed]);
+
   const location = useLocation();
   const reduce = useReducedMotion();
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="lg:pl-64">
-        <Header onMenuClick={() => setSidebarOpen((prev) => !prev)} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        collapsed={collapsed}
+      />
+      <div className={collapsed ? 'lg:pl-[4.5rem]' : 'lg:pl-64'}>
+        <Header
+          onMenuClick={() => setSidebarOpen((prev) => !prev)}
+          onToggleCollapse={() => setCollapsed((prev) => !prev)}
+          collapsed={collapsed}
+        />
         <main className="p-6">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
