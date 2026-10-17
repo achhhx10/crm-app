@@ -5,18 +5,44 @@ import { LoginPage } from './pages/LoginPage';
 import { ToastProvider } from './components/ui/toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const DashboardPage = React.lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
-const PipelinePage = React.lazy(() => import('./pages/PipelinePage').then(m => ({ default: m.PipelinePage })));
-const ContactsPage = React.lazy(() => import('./pages/ContactsPage').then(m => ({ default: m.ContactsPage })));
-const PhoningPage = React.lazy(() => import('./pages/PhoningPage').then(m => ({ default: m.PhoningPage })));
-const ContactDetailPage = React.lazy(() => import('./pages/ContactDetailPage').then(m => ({ default: m.ContactDetailPage })));
-const CallsPage = React.lazy(() => import('./pages/CallsPage').then(m => ({ default: m.CallsPage })));
-const FollowUpsPage = React.lazy(() => import('./pages/FollowUpsPage').then(m => ({ default: m.FollowUpsPage })));
-const DealsPage = React.lazy(() => import('./pages/DealsPage').then(m => ({ default: m.DealsPage })));
-const ReferralsPage = React.lazy(() => import('./pages/ReferralsPage').then(m => ({ default: m.ReferralsPage })));
-const ImportPage = React.lazy(() => import('./pages/ImportPage').then(m => ({ default: m.ImportPage })));
-const UsersPage = React.lazy(() => import('./pages/UsersPage').then(m => ({ default: m.UsersPage })));
-const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const PAGE_CHUNK_RELOAD_KEY = 'crm_page_chunk_reload';
+const PAGE_CHUNK_RELOAD_TTL = 30_000;
+
+function lazyRetry(
+  load: () => Promise<{ default: React.ComponentType<any> }>,
+): React.LazyExoticComponent<React.ComponentType<any>> {
+  return React.lazy(async () => {
+    try {
+      return await load();
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      try {
+        return await load();
+      } catch (secondError) {
+        const stamped = Number(sessionStorage.getItem(PAGE_CHUNK_RELOAD_KEY) || 0);
+        if (!stamped || Date.now() - stamped > PAGE_CHUNK_RELOAD_TTL) {
+          sessionStorage.setItem(PAGE_CHUNK_RELOAD_KEY, String(Date.now()));
+          window.location.reload();
+          await new Promise(() => {});
+        }
+        throw secondError;
+      }
+    }
+  });
+}
+
+const DashboardPage = lazyRetry(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const PipelinePage = lazyRetry(() => import('./pages/PipelinePage').then(m => ({ default: m.PipelinePage })));
+const ContactsPage = lazyRetry(() => import('./pages/ContactsPage').then(m => ({ default: m.ContactsPage })));
+const PhoningPage = lazyRetry(() => import('./pages/PhoningPage').then(m => ({ default: m.PhoningPage })));
+const ContactDetailPage = lazyRetry(() => import('./pages/ContactDetailPage').then(m => ({ default: m.ContactDetailPage })));
+const CallsPage = lazyRetry(() => import('./pages/CallsPage').then(m => ({ default: m.CallsPage })));
+const FollowUpsPage = lazyRetry(() => import('./pages/FollowUpsPage').then(m => ({ default: m.FollowUpsPage })));
+const DealsPage = lazyRetry(() => import('./pages/DealsPage').then(m => ({ default: m.DealsPage })));
+const ReferralsPage = lazyRetry(() => import('./pages/ReferralsPage').then(m => ({ default: m.ReferralsPage })));
+const ImportPage = lazyRetry(() => import('./pages/ImportPage').then(m => ({ default: m.ImportPage })));
+const UsersPage = lazyRetry(() => import('./pages/UsersPage').then(m => ({ default: m.UsersPage })));
+const SettingsPage = lazyRetry(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 
 const loadingFallback = (
   <div className="flex items-center justify-center h-64">

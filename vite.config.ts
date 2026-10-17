@@ -22,11 +22,12 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'pages',
+              networkTimeoutSeconds: 10,
               expiration: { maxEntries: 10 },
             },
           },
         ],
-        navigateFallback: '/offline.html',
+        navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/],
       },
     }),
