@@ -10,6 +10,10 @@
  *   API_URL=http://localhost:5173 node scripts/verify-phoning.mjs
  */
 import puppeteer from 'puppeteer';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const APP = process.env.APP_URL || 'https://crm-app-beige-iota.vercel.app';
 const [email, password] = [process.env.CRM_EMAIL, process.env.CRM_PASSWORD];
@@ -17,10 +21,50 @@ const ok = (c, m) => console.log(`  ${c ? 'OK   ' : 'ECHEC'} ${m}`) || c;
 let fails = 0;
 const check = (c, m) => { if (!ok(c, m)) fails++; };
 
-const browser = await puppeteer.launch({
-  headless: 'new',
-  executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  args: ['--no-sandbox', '--disable-dev-shm-usage'],
+// puppeteer.launch has started timing out waiting for the system Chrome's WS
+// endpoint, so the browser is spawned here and puppeteer only connects. The
+// bundled shell starts more reliably than the full application.
+const CHROME_CANDIDATES = [
+  '/Users/devops/.cache/puppeteer/chrome-headless-shell/mac-139.0.7258.138/chrome-headless-shell-mac-x64/chrome-headless-shell',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+];
+const profile = mkdtempSync(path.join(os.tmpdir(), 'crm-phoning-'));
+let chrome = null;
+let up = false;
+let port = 9222;
+outer:
+for (const CHROME of CHROME_CANDIDATES) {
+  for (const attempt of [9222, 9223, 9224]) {
+    const spawned = spawn(CHROME, [
+      '--headless=new',
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      `--remote-debugging-port=${attempt}`,
+      `--user-data-dir=${profile}-${attempt}`,
+      'about:blank',
+    ], { stdio: 'ignore' });
+    for (let i = 0; i < 15; i++) {
+      try {
+        await fetch(`http://127.0.0.1:${attempt}/json/version`);
+        chrome = spawned;
+        port = attempt;
+        up = true;
+        break outer;
+      } catch {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    spawned.kill('SIGKILL');
+  }
+}
+if (!up) {
+  console.error('DevTools Chrome injoignable (9222-9224)');
+  rmSync(profile, { recursive: true, force: true, maxRetries: 10 });
+  process.exit(2);
+}
+const browser = await puppeteer.connect({
+  browserURL: `http://127.0.0.1:${port}`,
+  defaultViewport: null,
 });
 const page = await browser.newPage();
 await page.setBypassServiceWorker(true);
@@ -109,5 +153,7 @@ const stageVal = await page.evaluate(() => document.querySelector('#ph-stage')?.
 check(Boolean(stageVal), `stage courant = ${stageVal}`);
 
 await browser.close();
-console.log(fails === 0 ? '\nTout est vert.' : `\n${fails} controle(s) en echec.`);
+if (chrome) chrome.kill('SIGKILL');
+rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+console.log(fails === 0 ? '\nTout est vert.' : `\n${fails} controle(s) en échec.`);
 process.exit(fails ? 1 : 0);
