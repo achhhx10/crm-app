@@ -107,6 +107,56 @@ router.get('/users', authMiddleware, requireRole('admin'), async (_req, res) => 
   }
 });
 
+// Self-service profile: a rep can rename themselves and change their own
+// password (re-authentication with the current one). Email and role stay
+// admin-managed: email is the login identity and there is no verification
+// flow to handle a change of ownership.
+router.put('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const me = (await db.select().from(users).where(eq(users.id, req.user!.userId)))[0];
+    if (!me) {
+      res.status(401).json({ error: 'Utilisateur non trouvé' });
+      return;
+    }
+
+    const { name, currentPassword, newPassword } = req.body ?? {};
+    const patch: Partial<typeof users.$inferInsert> = {};
+
+    if (name !== undefined) {
+      const trimmed = String(name).trim();
+      if (!trimmed) {
+        res.status(400).json({ error: 'Le nom ne peut pas être vide' });
+        return;
+      }
+      patch.name = trimmed;
+    }
+
+    if (newPassword !== undefined && newPassword !== '') {
+      if (typeof newPassword !== 'string' || newPassword.length < 8) {
+        res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères' });
+        return;
+      }
+      if (!currentPassword || !(await comparePassword(String(currentPassword), me.password))) {
+        res.status(400).json({ error: 'Mot de passe actuel incorrect' });
+        return;
+      }
+      patch.password = await hashPassword(newPassword);
+    }
+
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: 'Aucune modification fournie' });
+      return;
+    }
+
+    const [updated] = await db.update(users).set(patch).where(eq(users.id, me.id))
+      .returning({ id: users.id, name: users.name, email: users.email, role: users.role });
+    res.json(updated);
+  } catch (error) {
+    console.error('Update me error:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const id = parseId(req.params.id);

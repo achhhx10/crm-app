@@ -5,15 +5,17 @@ import { Input } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { Card, CardContent } from '../components/ui/card';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
-import { Badge } from '../components/ui/badge';
+import { RoleBadge } from '../components/ui/status-badges';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { useToast } from '../components/ui/toast';
-import { Plus, Pencil, Shield, User } from 'lucide-react';
+import { Plus, Pencil } from 'lucide-react';
 
 export function UsersPage() {
   const { toast } = useToast();
   const currentUser = JSON.parse(localStorage.getItem('crm_user') || '{}');
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'demarcheur' });
   const [formError, setFormError] = useState('');
@@ -78,14 +80,15 @@ export function UsersPage() {
     }
   };
 
-  const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Supprimer l'utilisateur "${name}" ?`)) return;
+  const doDeleteUser = async () => {
+    if (!deleteTarget) return;
     try {
-      await api.auth.deleteUser(id);
+      await api.auth.deleteUser(deleteTarget.id);
       loadUsers();
       toast('Utilisateur supprimé', 'success');
     } catch (err: any) {
       toast('Erreur lors de la suppression', 'error');
+      throw err;
     }
   };
 
@@ -119,13 +122,7 @@ export function UsersPage() {
                   <td className="px-4 py-3 font-medium">{u.name}</td>
                   <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
                   <td className="px-4 py-3">
-                    <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
-                      {u.role === 'admin' ? (
-                        <span className="flex items-center gap-1"><Shield className="h-3 w-3" /> Admin</span>
-                      ) : (
-                        <span className="flex items-center gap-1"><User className="h-3 w-3" /> Démarcheur</span>
-                      )}
-                    </Badge>
+                    <RoleBadge role={u.role} />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -135,7 +132,7 @@ export function UsersPage() {
                       </Button>
                       {u.id !== currentUser.id && (
                         <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" title="Supprimer"
-                          onClick={() => handleDelete(u.id, u.name)}>
+                          onClick={() => setDeleteTarget({ id: u.id, name: u.name })}>
                           <span className="text-destructive text-xs">✕</span>
                         </Button>
                       )}
@@ -238,6 +235,16 @@ export function UsersPage() {
           </DialogFooter>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Supprimer l'utilisateur "${deleteTarget?.name}" ?`}
+        description="Action définitive. Ses appels et leads assignés restent en base."
+        confirmLabel="Supprimer"
+        destructive
+        onConfirm={doDeleteUser}
+        onClose={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

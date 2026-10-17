@@ -209,4 +209,27 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Referrals are traceability: only an admin may remove one.
+router.delete('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseId(req.params.id);
+    if (id === null) {
+      res.status(404).json({ error: 'Recommandation non trouvée' });
+      return;
+    }
+    if (!isAdmin(req)) {
+      res.status(403).json({ error: 'Accès interdit' });
+      return;
+    }
+    const [deleted] = await db.delete(referrals).where(eq(referrals.id, id)).returning();
+    if (!deleted) {
+      res.status(404).json({ error: 'Recommandation non trouvée' });
+      return;
+    }
+    res.json(deleted);
+  } catch (error) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

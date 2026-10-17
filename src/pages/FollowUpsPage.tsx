@@ -3,14 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Select } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
-import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Skeleton } from '../components/ui/skeleton';
+import { CallFormDialog } from '../components/ui/call-form-dialog';
 import { useToast } from '../components/ui/toast';
 import { BellRing, Phone, PhoneCall, ExternalLink, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { CALL_RESULTS, OBJECTIONS, formatDate } from '../lib/utils';
+import { formatDate } from '../lib/utils';
 import type { DueFollowUp } from '../types';
 
 /**
@@ -28,14 +26,6 @@ export function FollowUpsPage() {
   const [onlyOverdue, setOnlyOverdue] = useState(false);
 
   const [calling, setCalling] = useState<DueFollowUp | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    result: 'interesse',
-    objection: '',
-    notes: '',
-    nextStep: '',
-    nextStepAt: '',
-  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,35 +41,6 @@ export function FollowUpsPage() {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
-
-  const openCall = (item: DueFollowUp) => {
-    setCalling(item);
-    setForm({ result: 'interesse', objection: '', notes: '', nextStep: '', nextStepAt: '' });
-  };
-
-  const saveCall = async () => {
-    if (!calling) return;
-    setSaving(true);
-    try {
-      await api.calls.create({
-        contactId: calling.contactId,
-        result: form.result,
-        objection: form.objection || undefined,
-        notes: form.notes || undefined,
-        nextStep: form.nextStep || undefined,
-        nextStepAt: form.nextStepAt || undefined,
-      });
-      // This call supersedes the pending follow-up, so the row leaves the list
-      // on reload: the "last call per contact" rule that powers /calls/due.
-      setCalling(null);
-      toast('Appel enregistré', 'success');
-      load();
-    } catch (err) {
-      toast("Erreur lors de l'enregistrement de l'appel", 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const visible = onlyOverdue ? items.filter(i => i.overdue) : items;
   const overdueCount = items.filter(i => i.overdue).length;
@@ -192,7 +153,7 @@ export function FollowUpsPage() {
                         </Button>
                       </a>
                     )}
-                    <Button size="sm" variant="outline" onClick={() => openCall(item)}>
+                    <Button size="sm" variant="outline" onClick={() => setCalling(item)}>
                       Rappeler
                     </Button>
                     <Link to={`/contacts/${item.contactId}`}>
@@ -213,57 +174,13 @@ export function FollowUpsPage() {
         </Card>
       )}
 
-      <Dialog open={!!calling} onClose={() => setCalling(null)}>
-        <DialogHeader>
-          <DialogTitle>Rappeler — {calling?.businessName}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-4">
-          {calling?.phone && (
-            <div className="flex items-center gap-2 rounded-lg bg-muted p-3 text-sm">
-              <Phone className="h-4 w-4" /> {calling.phone}
-            </div>
-          )}
-          {calling?.nextStep && (
-            <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
-              <span className="text-muted-foreground">À traiter : </span>{calling.nextStep}
-            </p>
-          )}
-          <div>
-            <label htmlFor="fu-result" className="text-sm font-medium">Résultat *</label>
-            <Select id="fu-result" value={form.result} onChange={e => setForm({ ...form, result: e.target.value })} className="mt-1">
-              {Object.entries(CALL_RESULTS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label htmlFor="fu-objection" className="text-sm font-medium">Objection</label>
-            <Select id="fu-objection" value={form.objection} onChange={e => setForm({ ...form, objection: e.target.value })} className="mt-1">
-              <option value="">Aucune</option>
-              {Object.entries(OBJECTIONS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label htmlFor="fu-notes" className="text-sm font-medium">Notes</label>
-            <textarea id="fu-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-              className="mt-1 flex min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="fu-nextstep" className="text-sm font-medium">Prochaine étape</label>
-              <Input id="fu-nextstep" value={form.nextStep} onChange={e => setForm({ ...form, nextStep: e.target.value })} className="mt-1" placeholder="Rappeler jeudi" />
-            </div>
-            <div>
-              <label htmlFor="fu-nextstep-at" className="text-sm font-medium">Date de relance</label>
-              <Input id="fu-nextstep-at" type="date" className="mt-1"
-                min={new Date().toISOString().slice(0, 10)}
-                value={form.nextStepAt} onChange={e => setForm({ ...form, nextStepAt: e.target.value })} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCalling(null)}>Annuler</Button>
-            <Button onClick={saveCall} disabled={saving}>{saving ? 'Enregistrement…' : 'Enregistrer'}</Button>
-          </DialogFooter>
-        </div>
-      </Dialog>
+      <CallFormDialog
+        open={!!calling}
+        contact={calling ? { id: calling.contactId, businessName: calling.businessName, phone: calling.phone, nextStep: calling.nextStep } : null}
+        defaultResult="interesse"
+        onClose={() => setCalling(null)}
+        onSaved={load}
+      />
     </div>
   );
 }

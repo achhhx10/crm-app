@@ -6,12 +6,15 @@ import { Input } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { Segmented } from '../components/ui/segmented';
 import { Card, CardContent } from '../components/ui/card';
-import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { Dialog, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
 import { ContactEditDialog } from '../components/contacts/ContactEditDialog';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { CallFormDialog } from '../components/ui/call-form-dialog';
 import { Plus, Search, Phone, Edit, Eye, EyeOff, ChevronUp, ChevronDown, Download, Archive, ArrowUpDown, X, Globe, GlobeLock, Flame, Gem, RefreshCw, Ban, MapPinOff, Star } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
-import { STAGES, CALL_RESULTS, OBJECTIONS, LANGUAGES, formatDate, opportunityScore, opportunityMeta } from '../lib/utils';
+import { STAGES, OBJECTIONS, CALL_RESULTS, LANGUAGES, formatDate, opportunityScore, opportunityMeta } from '../lib/utils';
+import { StageBadge, DncBadge } from '../components/ui/status-badges';
 import type { Contact } from '../types';
 
 const PRESETS: { id: string; label: string; icon: React.ElementType; hint: string; filters: Partial<Record<string, string>> }[] = [
@@ -191,6 +194,8 @@ export function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [quickCallContact, setQuickCallContact] = useState<Contact | null>(null);
   const [quickCallStartedAt, setQuickCallStartedAt] = useState<number>(Date.now());
+  const [archiveTarget, setArchiveTarget] = useState<number | null>(null);
+  const [confirmBulkArchive, setConfirmBulkArchive] = useState(false);
   const sortField = urlStr('sortBy', 'opportunity');
   const sortDir = urlStr('sortDir', 'desc') as 'asc' | 'desc';
   const setSortField = useCallback((v: string) => patch({ sortBy: v === 'opportunity' ? null : v }), [patch]);
@@ -209,14 +214,10 @@ export function ContactsPage() {
   const [bulkAssignee, setBulkAssignee] = useState('');
   const [team, setTeam] = useState<{ id: number; name: string }[]>([]);
   const { widths, save: saveWidths } = useColumnWidths();
-  const [callForm, setCallForm] = useState({
-    result: 'pas_decroche', objection: '', notes: '', nextStep: '',
-  });
 
   useEffect(() => {
     loadContacts();
   }, [page, stageFilter, activityFilter, minRating, hasSiteFilter, cityFilter, reachFilter, hasReviewsFilter, minReviews, languageFilter, dncFilter, calledFilter, archivedFilter, assigneeFilter, sortField, sortDir]);
-
   useEffect(() => {
     api.contacts.activities().then(setActivities).catch(() => {});
   }, []);
@@ -363,15 +364,16 @@ export function ContactsPage() {
 
   const handleBulkArchive = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(
-      `Archiver ${selectedIds.size} prospects ?\n\nIls disparaîtront des listes. Appels, devis et recommandations seront conservés et restaurables.`,
-    )) return;
+    setConfirmBulkArchive(true);
+  };
+
+  const doBulkArchive = async () => {
     try {
       const res = await api.contacts.bulkArchive([...selectedIds]);
       setSelectedIds(new Set());
       loadContacts();
       toast(`${res?.archived ?? selectedIds.size} prospect(s) archivé(s)`, 'success');
-    } catch (err) { toast('Erreur lors de l\'archivage', 'error'); }
+    } catch (err) { toast('Erreur lors de l\'archivage', 'error'); throw err; }
   };
 
   const handleExport = async () => {
@@ -409,29 +411,6 @@ export function ContactsPage() {
     } catch (err) { console.error(err); }
   };
 
-  const handleQuickCall = async () => {
-    if (!quickCallContact) return;
-    try {
-      // duration is validated as a positive integer server-side, so never send 0.
-      const elapsed = Math.floor((Date.now() - quickCallStartedAt) / 1000);
-      await api.calls.create({
-        contactId: quickCallContact.id,
-        duration: elapsed > 0 ? elapsed : undefined,
-        result: callForm.result,
-        objection: callForm.objection || undefined,
-        notes: callForm.notes || undefined,
-        nextStep: callForm.nextStep || undefined,
-      });
-      setQuickCallContact(null);
-      setCallForm({ result: 'pas_decroche', objection: '', notes: '', nextStep: '' });
-      loadContacts();
-      toast('Appel enregistré', 'success');
-    } catch (err) {
-      console.error(err);
-      toast("Erreur lors de l'enregistrement de l'appel", 'error');
-    }
-  };
-
   const handleSaved = () => {
     const wasEditing = Boolean(editingContact);
     setShowForm(false);
@@ -446,13 +425,18 @@ export function ContactsPage() {
   };
 
   const handleArchive = async (id: number) => {
-    if (!confirm('Archiver ce prospect ?\n\nIl disparaîtra des listes, mais ses appels, devis et recommandations seront conservés.')) return;
+    setArchiveTarget(id);
+  };
+
+  const doArchive = async () => {
+    if (!archiveTarget) return;
     try {
-      await api.contacts.archive(id);
+      await api.contacts.archive(archiveTarget);
       loadContacts();
       toast('Prospect archivé', 'success');
     } catch (err) {
       toast('Erreur lors de l\'archivage', 'error');
+      throw err;
     }
   };
 
@@ -678,7 +662,6 @@ export function ContactsPage() {
             </thead>
             <tbody>
               {visibleContacts.map((contact) => {
-                const stageInfo = STAGES[contact.stage || 'identifie'];
                 const isHidden = hiddenIds.has(contact.id);
                 const oppScore = opportunityScore(contact);
                 const oppMeta = opportunityMeta(oppScore);
@@ -695,9 +678,7 @@ export function ContactsPage() {
                     <td className="px-3 py-2 font-medium truncate" style={{ width: widths.businessName }}>
                       <span className="truncate">{contact.businessName}</span>
                       {contact.dnc === 1 && (
-                        <Badge variant="destructive" className="ml-1.5 align-middle" title={contact.dncReason || 'Ne plus appeler'}>
-                          Ne pas appeler
-                        </Badge>
+                        <DncBadge reason={contact.dncReason} className="ml-1.5 align-middle" />
                       )}
                     </td>
                     <td className="px-3 py-2 truncate" style={{ width: widths.contactName }}>{contact.contactName || '-'}</td>
@@ -717,7 +698,7 @@ export function ContactsPage() {
                       <Badge variant={oppMeta.variant} className="whitespace-nowrap" title={`Score opportunité ${oppScore}/6`}>{oppMeta.label}</Badge>
                     </td>
                     <td className="px-3 py-2" style={{ width: widths.stage }}>
-                      <Badge className={stageInfo?.color}>{stageInfo?.label || contact.stage}</Badge>
+                      <StageBadge stage={contact.stage} />
                     </td>
                     <td className="px-3 py-2" style={{ width: widths.site }}>
                       {contact.hasSite === 'pas_de_site' && <span className="flex items-center gap-1 text-xs text-destructive"><GlobeLock className="h-3 w-3" /> Pas de site</span>}
@@ -742,7 +723,7 @@ export function ContactsPage() {
                       <div className="flex justify-end gap-0.5">
                         {contact.phone && (
                           <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" aria-label="Enregistrer un appel"
-                            onClick={() => { setQuickCallContact(contact); setQuickCallStartedAt(Date.now()); setCallForm({ result: 'pas_decroche', objection: '', notes: '', nextStep: '' }); }}>
+                            onClick={() => { setQuickCallContact(contact); setQuickCallStartedAt(Date.now()); }}>
                             <Phone className="h-3.5 w-3.5 text-success" />
                           </Button>
                         )}
@@ -826,7 +807,7 @@ export function ContactsPage() {
               <div><span className="text-muted-foreground">Site:</span> {selectedContact.siteUrl ? <a href={selectedContact.siteUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">{selectedContact.siteUrl}</a> : '-'}</div>
               <div>
                 <span className="text-muted-foreground">Stage:</span>{' '}
-                <Badge className={STAGES[selectedContact.stage || 'identifie']?.color}>{STAGES[selectedContact.stage || 'identifie']?.label}</Badge>
+                <StageBadge stage={selectedContact.stage} />
               </div>
             </div>
             {selectedContact.notes && (
@@ -837,44 +818,37 @@ export function ContactsPage() {
       </Dialog>
 
       {/* Quick Call Dialog */}
-      <Dialog open={!!quickCallContact} onClose={() => setQuickCallContact(null)}>
-        <DialogHeader>
-          <DialogTitle>Enregistrer un appel — {quickCallContact?.businessName}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 mt-4">
-          {quickCallContact?.phone && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted text-sm">
-              <Phone className="h-4 w-4" /> {quickCallContact.phone}
-            </div>
-          )}
-          <div>
-            <label htmlFor="call-result" className="text-sm font-medium">Résultat *</label>
-            <Select id="call-result" value={callForm.result} onChange={e => setCallForm({...callForm, result: e.target.value})} className="mt-1">
-              {Object.entries(CALL_RESULTS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label htmlFor="call-objection" className="text-sm font-medium">Objection</label>
-            <Select id="call-objection" value={callForm.objection} onChange={e => setCallForm({...callForm, objection: e.target.value})} className="mt-1">
-              <option value="">Aucune</option>
-              {Object.entries(OBJECTIONS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label htmlFor="call-notes" className="text-sm font-medium">Notes</label>
-            <textarea id="call-notes" value={callForm.notes} onChange={e => setCallForm({...callForm, notes: e.target.value})}
-              className="mt-1 flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-          </div>
-          <div>
-            <label htmlFor="call-nextStep" className="text-sm font-medium">Prochaine étape</label>
-            <Input id="call-nextStep" value={callForm.nextStep} onChange={e => setCallForm({...callForm, nextStep: e.target.value})} className="mt-1" />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setQuickCallContact(null)}>Annuler</Button>
-            <Button onClick={handleQuickCall}>Enregistrer</Button>
-          </DialogFooter>
-        </div>
-      </Dialog>
+      <CallFormDialog
+        open={!!quickCallContact}
+        contact={quickCallContact}
+        defaultResult="pas_decroche"
+        defaultDuration={
+          quickCallContact && Date.now() - quickCallStartedAt > 0
+            ? String(Math.floor((Date.now() - quickCallStartedAt) / 1000))
+            : ''
+        }
+        onClose={() => { setQuickCallContact(null); setQuickCallStartedAt(Date.now()); }}
+        onSaved={loadContacts}
+      />
+
+      <ConfirmDialog
+        open={archiveTarget !== null}
+        title="Archiver ce prospect ?"
+        description="Il disparaîtra des listes, mais ses appels, devis et recommandations seront conservés."
+        confirmLabel="Archiver"
+        destructive
+        onConfirm={doArchive}
+        onClose={() => setArchiveTarget(null)}
+      />
+      <ConfirmDialog
+        open={confirmBulkArchive}
+        title={`Archiver ${selectedIds.size} prospects ?`}
+        description="Ils disparaîtront des listes. Appels, devis et recommandations seront conservés et restaurables."
+        confirmLabel="Archiver"
+        destructive
+        onConfirm={doBulkArchive}
+        onClose={() => setConfirmBulkArchive(false)}
+      />
     </div>
   );
 }

@@ -16,6 +16,7 @@ const DealsPage = React.lazy(() => import('./pages/DealsPage').then(m => ({ defa
 const ReferralsPage = React.lazy(() => import('./pages/ReferralsPage').then(m => ({ default: m.ReferralsPage })));
 const ImportPage = React.lazy(() => import('./pages/ImportPage').then(m => ({ default: m.ImportPage })));
 const UsersPage = React.lazy(() => import('./pages/UsersPage').then(m => ({ default: m.UsersPage })));
+const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 
 const loadingFallback = (
   <div className="flex items-center justify-center h-64">
@@ -150,6 +151,16 @@ export default function App() {
                     <UsersPage />
                   </Suspense>
                 </AdminRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <PrivateRoute>
+                  <Suspense fallback={loadingFallback}>
+                    <SettingsPage />
+                  </Suspense>
+                </PrivateRoute>
               }
             />
             <Route path="*" element={<Navigate to="/" replace />} />

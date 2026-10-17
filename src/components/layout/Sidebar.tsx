@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { GitBranch, Upload, Shield, LogOut, DollarSign, LayoutDashboard, Users, Phone, PhoneCall, Gift, BellRing } from 'lucide-react';
+import { NavLink, Link, useNavigate } from 'react-router-dom';
+import { GitBranch, Upload, Shield, LogOut, DollarSign, LayoutDashboard, Users, Phone, PhoneCall, Gift, BellRing, Settings } from 'lucide-react';
 import { DarkModeToggle } from '../ui/dark-mode-toggle';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/utils';
@@ -150,20 +150,26 @@ export function Sidebar({ isOpen = false, onClose, collapsed = false }: SidebarP
             </span>
           </div>
 
-          {/* Account block, above the navigation like a user-centric shell. */}
-          <div className={cn('flex items-center gap-3 border-b px-4 pb-3', collapsed && 'lg:justify-center lg:px-0')}>
-            <div
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary"
-              title={collapsed ? (user.name || 'Utilisateur') : undefined}
+          {/* Account block, above the navigation like a user-centric shell.
+              Clicking it opens the self-service profile page (/settings). */}
+          <div className={cn('flex items-center gap-2 border-b px-3 pb-3', collapsed && 'lg:justify-center lg:px-1')}>
+            <Link
+              to="/settings"
+              onClick={handleNavClick}
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 -m-1 transition-colors duration-200 hover:bg-muted/60"
+              title={collapsed ? 'Mon compte' : undefined}
             >
-              {user.name?.charAt(0) || '?'}
-            </div>
-            <div className={cn('min-w-0 flex-1', collapsed && 'lg:hidden')}>
-              <p className="truncate text-sm font-medium leading-tight">{user.name || 'Utilisateur'}</p>
-              <p className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">
-                {isAdmin ? 'Admin' : 'Démarcheur'}
-              </p>
-            </div>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+                {user.name?.charAt(0) || '?'}
+              </div>
+              <div className={cn('min-w-0 flex-1', collapsed && 'lg:hidden')}>
+                <p className="truncate text-sm font-medium leading-tight">{user.name || 'Utilisateur'}</p>
+                <p className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {isAdmin ? 'Admin' : 'Démarcheur'}
+                </p>
+              </div>
+              <Settings className={cn('h-4 w-4 shrink-0 text-muted-foreground', collapsed && 'lg:hidden')} />
+            </Link>
           </div>
 
           <nav className="flex-1 space-y-5 overflow-y-auto p-3">

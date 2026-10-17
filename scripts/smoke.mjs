@@ -206,6 +206,15 @@ const CHECKS = [
   ['recommandations (statistiques)', '/referrals/stats'],
   // 403 acceptable : un commercial n'est pas admin.
   ['utilisateurs', '/auth/users', { expect: [200, 403] }],
+  // Profil = la route /auth/me est la base de la page "Mon compte".
+  ['compte (profil)', '/auth/me', {
+    shape: [
+      { path: 'id', type: 'number' },
+      { path: 'email', type: 'string' },
+      { path: 'name', type: 'string' },
+    ],
+  }],
+  ['compte (maj vide refusee)', '/auth/me', { method: 'PUT', expect: [400] }],
   // Must answer 404: the seeding routes are only mounted when DEV_SEED_TOKEN is
   // set. If this ever fails, someone enabled demo seeding on production.
   ['seed désactivé', '/dev/seed-demo', { expect: [404] }],
@@ -219,6 +228,40 @@ async function main() {
   let failed = 0;
   for (const [label, path, opts] of CHECKS) {
     if (!(await check(label, path, opts))) failed += 1;
+  }
+
+  // Roundtrip fonctionnel du profil : renommer avec le même nom doit passer (200),
+  // et un changement de mot de passe avec le mauvais mot de passe actuel doit être refusé.
+  try {
+    const meRes = await fetch(`${API}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (meRes.ok) {
+      const me = await meRes.json();
+      const noop = await fetch(`${API}/auth/me`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: me.name }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const okNoop = noop.ok && !(noop.headers.get('content-type') || '').includes('text/html');
+      console.log(`  ${okNoop ? '✓' : '✗'} compte (renommage no-op) [${noop.status}]`);
+      if (!okNoop) failed += 1;
+
+      const badPwd = await fetch(`${API}/auth/me`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: 'definitely-wrong-password', newPassword: 'not-for-real-123' }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const okBadPwd = badPwd.status === 400;
+      console.log(`  ${okBadPwd ? '✓' : '✗'} compte (mot de passe actuel requis) [${badPwd.status}]`);
+      if (!okBadPwd) failed += 1;
+    }
+  } catch (err) {
+    console.error(`  ✗ compte (roundtrip) : ${err.message}`);
+    failed += 1;
   }
 
   console.log(failed === 0 ? '\nTout est vert.' : `\n${failed} contrôle(s) en échec.`);

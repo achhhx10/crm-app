@@ -31,6 +31,14 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 20));
     const offset = (page - 1) * limit;
 
+    // Optional per-contact filter (contact detail page). A rep asking for a
+    // contact they don't own still only ever sees deals assigned to them.
+    const contactIdParam = req.query.contactId != null && req.query.contactId !== '' ? Number(req.query.contactId) : null;
+    if (contactIdParam !== null && (!Number.isInteger(contactIdParam) || contactIdParam <= 0)) {
+      return res.status(400).json({ error: 'ID de contact invalide' });
+    }
+    const contactFilter = contactIdParam ? eq(deals.contactId, contactIdParam) : undefined;
+
     // LEFT JOIN so the client never has to resolve names from a capped contact list.
     const dealColumns = {
       id: deals.id,
@@ -49,14 +57,16 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     if (isAdmin(req)) {
       allDeals = await db.select(dealColumns).from(deals)
         .leftJoin(contacts, eq(deals.contactId, contacts.id))
+        .where(contactFilter)
         .orderBy(desc(deals.createdAt)).limit(limit).offset(offset);
-      totalResult = (await db.select({ value: count() }).from(deals))[0]?.value ?? 0;
+      totalResult = (await db.select({ value: count() }).from(deals).where(contactFilter))[0]?.value ?? 0;
     } else {
+      const ownerFilter = eq(deals.assignedTo, req.user!.userId);
       allDeals = await db.select(dealColumns).from(deals)
         .leftJoin(contacts, eq(deals.contactId, contacts.id))
-        .where(eq(deals.assignedTo, req.user!.userId))
+        .where(contactFilter ? and(ownerFilter, contactFilter) : ownerFilter)
         .orderBy(desc(deals.createdAt)).limit(limit).offset(offset);
-      totalResult = (await db.select({ value: count() }).from(deals).where(eq(deals.assignedTo, req.user!.userId)))[0]?.value ?? 0;
+      totalResult = (await db.select({ value: count() }).from(deals).where(contactFilter ? and(ownerFilter, contactFilter) : ownerFilter))[0]?.value ?? 0;
     }
     res.json({ deals: allDeals, total: totalResult, page, limit });
   } catch (error) {

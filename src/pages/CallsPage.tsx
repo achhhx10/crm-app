@@ -1,18 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Select } from '../components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { Badge } from '../components/ui/badge';
+import { CallResultBadge } from '../components/ui/status-badges';
+import { CallFormDialog } from '../components/ui/call-form-dialog';
 import { Plus, Search, Phone } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { DateRangePicker } from '../components/ui/date-range';
 import { ContactPicker, PickedContact } from '../components/ui/contact-picker';
-import { useToast } from '../components/ui/toast';
-import { CALL_RESULTS, OBJECTIONS, formatDate, formatDateTime, formatDuration } from '../lib/utils';
+import { OBJECTIONS, formatDate, formatDateTime, formatDuration } from '../lib/utils';
 
 /** A scheduled callback that has passed its date. */
 function isOverdue(nextStepAt: string | number | Date): boolean {
@@ -20,7 +17,6 @@ function isOverdue(nextStepAt: string | number | Date): boolean {
 }
 
 export function CallsPage() {
-  const { toast } = useToast();
   const [onlyFollowUps, setOnlyFollowUps] = useState(false);
   const [filterContact, setFilterContact] = useState<PickedContact | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -50,10 +46,6 @@ export function CallsPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [contactFilter, setContactFilter] = useState('');
-  const [form, setForm] = useState({
-    duration: '', result: 'pas_decroche', objection: '', notes: '', nextStep: '', nextStepAt: '',
-  });
-  const [pickedContact, setPickedContact] = useState<PickedContact | null>(null);
 
   useEffect(() => {
     loadCalls();
@@ -78,33 +70,6 @@ export function CallsPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.calls.create({
-        contactId: pickedContact ? pickedContact.id : undefined,
-        duration: form.duration ? Number(form.duration) : undefined,
-        result: form.result,
-        objection: form.objection || undefined,
-        notes: form.notes || undefined,
-        nextStep: form.nextStep || undefined,
-        nextStepAt: form.nextStepAt || undefined,
-      });
-      setShowForm(false);
-      resetForm();
-      loadCalls();
-      toast('Appel enregistré', 'success');
-    } catch (err) {
-      toast("Erreur lors de l'enregistrement de l'appel", 'error');
-    }
-  };
-
-  const resetForm = () => {
-    setPickedContact(null);
-    setForm({ duration: '', result: 'pas_decroche', objection: '', notes: '', nextStep: '', nextStepAt: '' });
   };
 
   if (loading) {
@@ -179,7 +144,7 @@ export function CallsPage() {
             placeholder="Tous les prospects — rechercher pour filtrer"
           />
         </div>
-        <Button onClick={() => { resetForm(); setShowForm(true); }}>
+        <Button onClick={() => setShowForm(true)}>
           <Plus className="h-4 w-4 mr-2" /> Enregistrer un appel
         </Button>
       </div>
@@ -205,9 +170,7 @@ export function CallsPage() {
                   <TableCell>{formatDateTime(call.date)}</TableCell>
                   <TableCell className="font-medium">{call.businessName || 'Sans contact'}</TableCell>
                   <TableCell>
-                    <Badge variant={call.result === 'rdv_obtenu' ? 'default' : call.result === 'interesse' ? 'secondary' : 'outline'}>
-                      {CALL_RESULTS[call.result] || call.result}
-                    </Badge>
+                    <CallResultBadge result={call.result} />
                   </TableCell>
                   <TableCell>{formatDuration(call.duration)}</TableCell>
                   <TableCell>{call.objection ? OBJECTIONS[call.objection] || call.objection : '-'}</TableCell>
@@ -240,77 +203,13 @@ export function CallsPage() {
       </Card>
 
       {/* Add Call Dialog */}
-      <Dialog open={showForm} onClose={() => setShowForm(false)}>
-        <DialogHeader>
-          <DialogTitle>Enregistrer un appel</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-          <div>
-            <label htmlFor="call-contact" className="text-sm font-medium">Contact</label>
-            <div className="mt-1">
-              <ContactPicker id="call-contact" value={pickedContact} onChange={setPickedContact} />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium">Durée (secondes)</label>
-              <Input type="number" value={form.duration} onChange={e => setForm({...form, duration: e.target.value})} className="mt-1" />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Résultat *</label>
-              <Select value={form.result} onChange={e => setForm({...form, result: e.target.value})} className="mt-1" required>
-                {Object.entries(CALL_RESULTS).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </Select>
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium">Objection</label>
-            <Select value={form.objection} onChange={e => setForm({...form, objection: e.target.value})} className="mt-1">
-              <option value="">Aucune</option>
-              {Object.entries(OBJECTIONS).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="text-sm font-medium">Notes</label>
-            <textarea
-              value={form.notes}
-              onChange={e => setForm({...form, notes: e.target.value})}
-              className="mt-1 flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="call-next-step" className="text-sm font-medium">Prochaine étape</label>
-              <Input
-                id="call-next-step"
-                value={form.nextStep}
-                onChange={e => setForm({...form, nextStep: e.target.value})}
-                className="mt-1"
-                placeholder="Rappeler pour le devis"
-              />
-            </div>
-            <div>
-              <label htmlFor="call-next-step-at" className="text-sm font-medium">Date de relance</label>
-              <Input
-                id="call-next-step-at"
-                type="date"
-                value={form.nextStepAt}
-                min={new Date().toISOString().slice(0, 10)}
-                onChange={e => setForm({...form, nextStepAt: e.target.value})}
-                className="mt-1"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Annuler</Button>
-            <Button type="submit">Enregistrer</Button>
-          </DialogFooter>
-        </form>
-      </Dialog>
+      <CallFormDialog
+        open={showForm}
+        allowContactChoice
+        defaultResult="pas_decroche"
+        onClose={() => setShowForm(false)}
+        onSaved={loadCalls}
+      />
     </div>
   );
 }

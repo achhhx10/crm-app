@@ -1,13 +1,16 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
 
-export function Badge({ className = '', variant = 'default', children, ...props }: React.HTMLAttributes<HTMLDivElement> & { variant?: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' }) {
+export type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info';
+
+export function Badge({ className = '', variant = 'default', children, ...props }: React.HTMLAttributes<HTMLDivElement> & { variant?: BadgeVariant }) {
   const variants: Record<string, string> = {
     default: 'bg-primary text-primary-foreground',
     secondary: 'bg-secondary text-secondary-foreground',
     destructive: 'bg-destructive text-destructive-foreground',
     success: 'bg-success text-success-foreground',
     warning: 'bg-warning text-warning-foreground',
+    info: 'bg-info text-info-foreground',
     outline: 'text-foreground border',
   };
 

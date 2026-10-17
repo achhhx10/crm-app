@@ -12,6 +12,7 @@ import { Select } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { CALL_RESULTS, OBJECTIONS, STAGES, LANGUAGES, formatDate, formatDateTime, formatDuration } from '../lib/utils';
+import { StageBadge, CallResultBadge, DncBadge } from '../components/ui/status-badges';
 import type { Contact, Call } from '../types';
 
 const PAGE_SIZE = 500;
@@ -489,7 +490,7 @@ export function PhoningPage() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <Badge variant="secondary">{index + 1} / {queue.length}</Badge>
-                  {current?.stage && <Badge variant="outline">{STAGES[current.stage]?.label || current.stage}</Badge>}
+                  {current?.stage && <StageBadge stage={current.stage} />}
                 </div>
               </div>
             </CardHeader>
@@ -515,7 +516,9 @@ export function PhoningPage() {
                   </Badge>
                 )}
                 {current?.dnc === 1 && (
-                  <Badge variant="destructive"><Ban className="h-3 w-3 mr-1" /> Ne pas appeler — à valider</Badge>
+                  <DncBadge reason={current?.dncReason}>
+                    <span className="flex items-center gap-1"><Ban className="h-3 w-3" /> Ne pas appeler — à valider</span>
+                  </DncBadge>
                 )}
               </div>
 
@@ -562,9 +565,7 @@ export function PhoningPage() {
                   <div className="space-y-1 max-h-24 overflow-y-auto">
                     {history.slice(0, 3).map(c => (
                       <div key={c.id} className="text-xs flex items-start gap-2">
-                        <Badge variant={c.result === 'rdv_obtenu' ? 'success' : c.result === 'interesse' ? 'secondary' : 'outline'}>
-                          {CALL_RESULTS[c.result] || c.result}
-                        </Badge>
+                        <CallResultBadge result={c.result} />
                         <span className="text-muted-foreground shrink-0">{formatDateTime(c.date)}</span>
                         {c.notes && <span className="truncate">{c.notes}</span>}
                         {c.nextStep && (

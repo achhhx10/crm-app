@@ -5,8 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { ArrowLeft, Phone, Mail, MapPin, Star, ExternalLink, Gift } from 'lucide-react';
-import { formatDate, formatDateTime, formatDuration, STAGES, CALL_RESULTS, OBJECTIONS } from '../lib/utils';
+import { ArrowLeft, Phone, Mail, MapPin, Star, ExternalLink, Gift, Pencil, PhoneCall, Wallet } from 'lucide-react';
+import { formatDate, formatDateTime, formatDuration, formatCurrency, OBJECTIONS } from '../lib/utils';
+import { StageBadge, CallResultBadge, ReferralStatusBadge, DealStatusBadge } from '../components/ui/status-badges';
+import { CallFormDialog } from '../components/ui/call-form-dialog';
+import { ContactEditDialog } from '../components/contacts/ContactEditDialog';
 import type { Contact, Call } from '../types';
 
 interface ReferralItem {
@@ -16,13 +19,35 @@ interface ReferralItem {
   status: string | null;
 }
 
+interface DealRow {
+  id: number;
+  contactId: number;
+  amount: number | null;
+  siteType: string | null;
+  status: string | null;
+  createdAt?: string;
+}
+
+const SITE_TYPES: Record<string, string> = {
+  vitrine_simple: 'Vitrine Simple',
+  vitrine_complete: 'Vitrine Complète',
+  ecommerce: 'E-commerce',
+  sur_mesure: 'Sur Mesure',
+};
+
 export function ContactDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const currentUser = JSON.parse(localStorage.getItem('crm_user') || '{}');
+  const isAdmin = currentUser?.role === 'admin';
   const [contact, setContact] = useState<Contact | null>(null);
   const [calls, setCalls] = useState<Call[]>([]);
   const [referralsData, setReferralsData] = useState<{ referrals: ReferralItem[]; total: number; signed: number }>({ referrals: [], total: 0, signed: 0 });
+  const [deals, setDeals] = useState<DealRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showCall, setShowCall] = useState(false);
+  const [team, setTeam] = useState<{ id: number; name: string }[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -43,6 +68,38 @@ export function ContactDetailPage() {
     }).finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.auth.users()
+      .then((res: any) => setTeam(Array.isArray(res) ? res : res?.users || []))
+      .catch(() => setTeam([]));
+  }, [isAdmin]);
+
+  const reloadContact = async () => {
+    if (!id) return;
+    try {
+      setContact(await api.contacts.get(Number(id)));
+    } catch {
+      /* keep the previous view */
+    }
+  };
+
+  const reloadCalls = async () => {
+    if (!id) return;
+    try {
+      setCalls((await api.calls.byContact(Number(id))) || []);
+    } catch {
+      /* keep the previous view */
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin || !id) return;
+    api.deals.list({ contactId: id, limit: '50' })
+      .then(res => setDeals(res.deals || []))
+      .catch(() => setDeals([]));
+  }, [isAdmin, id]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -62,18 +119,26 @@ export function ContactDetailPage() {
     );
   }
 
-  const stageInfo = STAGES[contact.stage || 'identifie'];
-
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link to="/contacts"><ArrowLeft className="h-5 w-5" /></Link>
         </Button>
-        <div>
+        <div className="flex-1 min-w-[200px]">
           <h1 className="text-2xl font-bold">{contact.businessName}</h1>
-          {stageInfo && <Badge className={stageInfo.color}>{stageInfo.label}</Badge>}
+          <div className="flex items-center gap-2 mt-1">
+            <StageBadge stage={contact.stage} />
+            {(isAdmin || Number(contact.assignedTo) === Number(currentUser?.id)) && (
+              <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}>
+                <Pencil className="h-3.5 w-3.5 mr-1" /> Modifier
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => setShowCall(true)}>
+              <PhoneCall className="h-3.5 w-3.5 mr-1" /> Enregistrer un appel
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -161,6 +226,48 @@ export function ContactDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Deals (admin only — callers do not need per-contact revenue) */}
+      {isAdmin && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5" />
+              Devis & Deals
+            </CardTitle>
+            <Badge variant="secondary">{deals.length}</Badge>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Montant</TableHead>
+                  <TableHead>Type de site</TableHead>
+                  <TableHead>Statut</TableHead>
+                  <TableHead>Créé le</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {deals.map((deal) => (
+                  <TableRow key={deal.id}>
+                    <TableCell className="font-medium">{formatCurrency(deal.amount)}</TableCell>
+                    <TableCell>{deal.siteType ? SITE_TYPES[deal.siteType] || deal.siteType : '-'}</TableCell>
+                    <TableCell><DealStatusBadge status={deal.status} /></TableCell>
+                    <TableCell>{deal.createdAt ? formatDate(deal.createdAt) : '-'}</TableCell>
+                  </TableRow>
+                ))}
+                {deals.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      Aucun deal pour ce prospect
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Calls History */}
       <Card>
         <CardHeader>
@@ -183,9 +290,7 @@ export function ContactDetailPage() {
                 <TableRow key={call.id}>
                   <TableCell>{formatDateTime(call.date)}</TableCell>
                   <TableCell>
-                    <Badge variant={call.result === 'rdv_obtenu' ? 'default' : call.result === 'interesse' ? 'secondary' : 'outline'}>
-                      {CALL_RESULTS[call.result] || call.result}
-                    </Badge>
+                    <CallResultBadge result={call.result} />
                   </TableCell>
                   <TableCell>{formatDuration(call.duration)}</TableCell>
                   <TableCell>{call.objection ? OBJECTIONS[call.objection] || call.objection : '-'}</TableCell>
@@ -246,9 +351,7 @@ export function ContactDetailPage() {
                   <TableCell className="font-medium">{ref.referredName || '-'}</TableCell>
                   <TableCell>{ref.referredPhone || '-'}</TableCell>
                   <TableCell>
-                    <Badge variant={ref.status === 'convertie' ? 'default' : ref.status === 'en_attente' ? 'secondary' : 'outline'}>
-                      {ref.status === 'convertie' ? 'Convertie' : ref.status === 'en_attente' ? 'En attente' : ref.status === 'perdue' ? 'Perdue' : ref.status || '-'}
-                    </Badge>
+                    <ReferralStatusBadge status={ref.status} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -263,6 +366,24 @@ export function ContactDetailPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Edit contact */}
+      <ContactEditDialog
+        open={showEdit}
+        contact={contact}
+        isAdmin={isAdmin}
+        team={team}
+        onClose={() => setShowEdit(false)}
+        onSaved={() => { setShowEdit(false); reloadContact(); }}
+      />
+
+      {/* Log a call */}
+      <CallFormDialog
+        open={showCall}
+        contact={contact}
+        onClose={() => setShowCall(false)}
+        onSaved={() => { reloadCalls(); reloadContact(); }}
+      />
     </div>
   );
 }

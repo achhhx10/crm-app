@@ -6,35 +6,26 @@ import { Select } from '../components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { Badge } from '../components/ui/badge';
 import { Plus, Gift, Award } from 'lucide-react';
 import { ContactPicker, PickedContact } from '../components/ui/contact-picker';
 import { useToast } from '../components/ui/toast';
 import { formatDate } from '../lib/utils';
 import { Pagination } from '../components/ui/pagination';
-
-const REFERRAL_STATUS_LABELS: Record<string, string> = {
-  contacte: 'Contacté',
-  en_attente: 'En attente',
-  signe: 'Convertie',
-  perdu: 'Perdue',
-};
-
-/** Accepts the legacy French values written by older builds. */
-function normaliseReferralStatus(value: string | null | undefined): string {
-  if (value === 'convertie') return 'signe';
-  if (value === 'perdue') return 'perdu';
-  return value || 'contacte';
-}
+import { ReferralStatusBadge, normaliseReferralStatus } from '../components/ui/status-badges';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
 
 export function ReferralsPage() {
   const { toast } = useToast();
+  const isAdminRef = (() => {
+    try { return JSON.parse(localStorage.getItem('crm_user') || '{}')?.role === 'admin'; } catch { return false; }
+  })();
   const [referrals, setReferrals] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [deleteReferral, setDeleteReferral] = useState<{ id: number; name: string } | null>(null);
   const [form, setForm] = useState({
     referredName: '', referredPhone: '', referredEmail: '',
   });
@@ -164,28 +155,30 @@ export function ReferralsPage() {
                   <TableCell>{ref.referredName || '-'}</TableCell>
                   <TableCell>{ref.referredPhone || '-'}</TableCell>
                   <TableCell>
-                    <Badge variant={
-                      canonical === 'signe' ? 'default'
-                        : canonical === 'en_attente' ? 'secondary'
-                          : canonical === 'perdu' ? 'outline' : 'secondary'
-                    }>
-                      {REFERRAL_STATUS_LABELS[canonical] || canonical}
-                    </Badge>
+                    <ReferralStatusBadge status={ref.status} />
                   </TableCell>
                   <TableCell>
                     {/* Actions must stay available until the referral is decided:
                         they used to render only for 'en_attente', so a brand-new
                         'contacte' referral showed "Perdue" with no way to fix it. */}
-                    {canonical !== 'signe' && canonical !== 'perdu' && (
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="outline" onClick={() => handleUpdateStatus(ref.id, 'signe')}>
-                          Convertie
+                    <div className="flex items-center gap-1">
+                      {canonical !== 'signe' && canonical !== 'perdu' && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => handleUpdateStatus(ref.id, 'signe')}>
+                            Convertie
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleUpdateStatus(ref.id, 'perdu')}>
+                            Perdue
+                          </Button>
+                        </>
+                      )}
+                      {isAdminRef && (
+                        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px] h-7 w-7" title="Supprimer"
+                          onClick={() => setDeleteReferral({ id: ref.id, name: ref.referredName || `#${ref.id}` })}>
+                          <span className="text-destructive text-xs">✕</span>
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => handleUpdateStatus(ref.id, 'perdu')}>
-                          Perdue
-                        </Button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
                 );
@@ -237,6 +230,26 @@ export function ReferralsPage() {
           </DialogFooter>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteReferral !== null}
+        title={`Supprimer la recommandation "${deleteReferral?.name}" ?`}
+        description="Action définitive : elle n'apparaîtra plus dans le cahier de recommandations."
+        confirmLabel="Supprimer"
+        destructive
+        onConfirm={async () => {
+          if (!deleteReferral) return;
+          try {
+            await api.referrals.delete(deleteReferral.id);
+            loadReferrals();
+            toast('Recommandation supprimée', 'success');
+          } catch (err) {
+            toast('Erreur lors de la suppression', 'error');
+            throw err;
+          }
+        }}
+        onClose={() => setDeleteReferral(null)}
+      />
     </div>
   );
 }

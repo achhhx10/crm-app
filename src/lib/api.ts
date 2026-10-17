@@ -107,6 +107,8 @@ export const api = {
         body: JSON.stringify(data),
       }),
     deleteUser: (id: number) => request<any>(`/auth/users/${id}`, { method: 'DELETE' }),
+    updateMe: (data: { name?: string; currentPassword?: string; newPassword?: string }) =>
+      request<any>('/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
   },
 
   contacts: {
@@ -176,6 +178,7 @@ export const api = {
     stats: () => request<any>('/referrals/stats'),
     create: (data: any) => request<any>('/referrals', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: number, data: any) => request<any>(`/referrals/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: number) => request<any>(`/referrals/${id}`, { method: 'DELETE' }),
   },
 
   dashboard: {
