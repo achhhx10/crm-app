@@ -783,64 +783,58 @@ function FiltersBar({
 }) {
   return (
     <Card>
-      {/*
-        py-3 alone left the base pt-0 in force and the icon sat on the top
-        border. Padding is now set once, and the selects carry a max width so
-        the row wraps instead of overflowing.
-      */}
-      <CardContent className="flex flex-wrap items-center gap-2 py-3">
-        <PhoneCall className="h-5 w-5 shrink-0 text-primary" aria-hidden />
-        <Select
-          className="w-auto min-w-[9rem] max-w-[17rem]"
-          value={filters.reach}
-          onChange={e => setFilters({ ...filters, reach: e.target.value })}
-          aria-label="File"
-        >
-          <option value="true">Joignables (avec téléphone)</option>
-          <option value="false">Sans téléphone (à enrichir)</option>
-        </Select>
-        <Select
-          className="w-auto min-w-[9rem] max-w-[17rem]"
-          value={filters.hasSite}
-          onChange={e => setFilters({ ...filters, hasSite: e.target.value })}
-          aria-label="Site"
-        >
-          <option value="">Tous les sites</option>
-          <option value="pas_de_site">Sans site</option>
-          <option value="site_fonctionnel">Site fonctionnel</option>
-        </Select>
-        <Select
-          className="w-auto min-w-[9rem] max-w-[17rem]"
-          value={filters.stage}
-          onChange={e => setFilters({ ...filters, stage: e.target.value })}
-          aria-label="Stage"
-        >
-          <option value="">Tous les stages</option>
-          {Object.entries(STAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </Select>
-        <Select
-          className="w-auto min-w-[9rem] max-w-[17rem]"
-          value={filters.language}
-          onChange={e => setFilters({ ...filters, language: e.target.value })}
-          aria-label="Langue"
-        >
-          <option value="">Toutes les langues</option>
-          {Object.entries(LANGUAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          <option value="__empty__">Indéterminée</option>
-        </Select>
-        <label className="flex min-h-[40px] items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={filters.includeCalled}
-            onChange={e => setFilters({ ...filters, includeCalled: e.target.checked })}
-            className="h-4 w-4 rounded border-input"
-          />
-          Inclure les prospects déjà appelés
-        </label>
-        <span className="ml-auto text-sm text-muted-foreground">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="flex items-center gap-2 text-base font-medium">
+          <PhoneCall className="h-4 w-4 text-primary" aria-hidden /> File d'appels
+        </CardTitle>
+        <span className="flex items-center gap-2 text-sm text-muted-foreground">
           {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {queueSummary(total, remaining, loaded)}
         </span>
+      </CardHeader>
+      <CardContent className="px-3 pb-3 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-2">
+        <div>
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">File</span>
+          <Select value={filters.reach} onChange={e => setFilters({ ...filters, reach: e.target.value })} aria-label="File">
+            <option value="true">Joignables (avec tél.)</option>
+            <option value="false">Sans tél. (à enrichir)</option>
+          </Select>
+        </div>
+        <div>
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">Site</span>
+          <Select value={filters.hasSite} onChange={e => setFilters({ ...filters, hasSite: e.target.value })} aria-label="Site">
+            <option value="">Tous les sites</option>
+            <option value="pas_de_site">Sans site</option>
+            <option value="site_fonctionnel">Site fonctionnel</option>
+          </Select>
+        </div>
+        <div>
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">Stage</span>
+          <Select value={filters.stage} onChange={e => setFilters({ ...filters, stage: e.target.value })} aria-label="Stage">
+            <option value="">Tous les stages</option>
+            {Object.entries(STAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </Select>
+        </div>
+        <div>
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">Langue</span>
+          <Select value={filters.language} onChange={e => setFilters({ ...filters, language: e.target.value })} aria-label="Langue">
+            <option value="">Toutes les langues</option>
+            {Object.entries(LANGUAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            <option value="__empty__">Indéterminée</option>
+          </Select>
+        </div>
+        <div>
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">Appels passés</span>
+          <label className="flex min-h-[40px] items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={filters.includeCalled}
+              onChange={e => setFilters({ ...filters, includeCalled: e.target.checked })}
+              className="h-4 w-4 rounded border-input"
+            />
+            Inclure les prospects déjà appelés
+          </label>
+        </div>
       </CardContent>
     </Card>
   );

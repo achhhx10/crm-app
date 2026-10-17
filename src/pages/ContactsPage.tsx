@@ -208,6 +208,7 @@ export function ContactsPage() {
     } catch { return new Set(); }
   });
   const [showHidden, setShowHidden] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [bulkStage, setBulkStage] = useState('');
   const dncFilter = dncFilterUrl;
   const assigneeFilter = assigneeFilterUrl;
@@ -457,6 +458,14 @@ export function ContactsPage() {
   const visibleContacts = getVisibleContacts();
   const totalPages = Math.ceil(total / 100);
   const hiddenCount = contacts.filter(c => hiddenIds.has(c.id)).length;
+  const advancedCount = [
+    calledFilter !== 'all',
+    dncFilter !== 'exclude',
+    activityFilter !== 'all',
+    hasSiteFilter !== 'all',
+    cityFilter !== 'all',
+    hasReviewsFilter !== 'all' || minReviews !== '',
+  ].filter(Boolean).length;
 
   if (loading && contacts.length === 0) {
     return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-muted-foreground">Chargement des prospects...</div></div>;
@@ -464,6 +473,17 @@ export function ContactsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Page header */}
+      <div className="flex flex-wrap items-start justify-between gap-3 px-1">
+        <div>
+          <h1 className="text-2xl font-bold">Prospects</h1>
+          <p className="text-sm text-muted-foreground">{total} prospects</p>
+        </div>
+        <Button onClick={() => { setEditingContact(null); setShowForm(true); }}>
+          <Plus className="h-4 w-4 mr-1" /> Ajouter
+        </Button>
+      </div>
+
       {/* Smart views (presets) */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground">Vues rapides:</span>
@@ -492,93 +512,122 @@ export function ContactsPage() {
         />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex-1 min-w-[200px]">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Rechercher entreprise, contact, ville..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="pl-9"
-            />
+      {/* Filters: primary row + collapsible advanced grid */}
+      <Card>
+        <CardContent className="p-3 space-y-3">
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="flex-1 min-w-[200px]">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Rechercher entreprise, contact, ville..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <Select className="w-auto min-w-[10rem]" value={stageFilter} onChange={(e) => { setActivePreset(null); setStageFilter(e.target.value); setPage(1); }}>
+              <option value="all">Tous les stages</option>
+              {Object.entries(STAGES).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
+            </Select>
+            <Select className="w-auto min-w-[9rem]" value={languageFilter} onChange={(e) => { setActivePreset(null); setLanguageFilter(e.target.value); setPage(1); }}>
+              <option value="all">Toutes langues</option>
+              {Object.entries(LANGUAGES).map(([key, l]) => <option key={key} value={key}>{l.label}</option>)}
+              <option value="__empty__">Indéterminée</option>
+            </Select>
+            {isAdmin ? (
+              <Select className="w-auto min-w-[10rem]" value={assigneeFilter} onChange={(e) => { setActivePreset(null); setAssigneeFilter(e.target.value); setPage(1); }}
+                aria-label="Filtrer par commercial">
+                <option value="all">Tous les commerciaux</option>
+                <option value="unassigned">Non assignés</option>
+                {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
+              </Select>
+            ) : null}
+            <Select className="w-auto min-w-[9rem]" value={archivedFilter} onChange={(e) => { setActivePreset(null); setArchivedFilter(e.target.value); setPage(1); }}
+              aria-label="Filtrer les prospects archivés">
+              <option value="exclude">Hors archives</option>
+              <option value="only">Archives uniquement</option>
+              <option value="include">Tous</option>
+            </Select>
+            <Button
+              variant={showAdvanced || advancedCount > 0 ? 'default' : 'outline'}
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              aria-expanded={showAdvanced}
+            >
+              <ChevronDown className={`h-4 w-4 mr-1 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+              Filtres avancés{advancedCount > 0 ? ` (${advancedCount})` : ''}
+            </Button>
           </div>
-        </div>
-        <Select className="w-auto" value={stageFilter} onChange={(e) => { setActivePreset(null); setStageFilter(e.target.value); setPage(1); }}>
-          <option value="all">Tous les stages</option>
-          {Object.entries(STAGES).map(([key, s]) => <option key={key} value={key}>{s.label}</option>)}
-        </Select>
-        <Select className="w-auto" value={languageFilter} onChange={(e) => { setActivePreset(null); setLanguageFilter(e.target.value); setPage(1); }}>
-          <option value="all">Toutes langues</option>
-          {Object.entries(LANGUAGES).map(([key, l]) => <option key={key} value={key}>{l.label}</option>)}
-          <option value="__empty__">Indéterminée</option>
-        </Select>
-        {isAdmin ? (
-          <Select className="w-auto" value={assigneeFilter} onChange={(e) => { setActivePreset(null); setAssigneeFilter(e.target.value); setPage(1); }}
-            aria-label="Filtrer par commercial">
-            <option value="all">Tous les commerciaux</option>
-            <option value="unassigned">Non assignés</option>
-            {team.map(u => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
-          </Select>
-        ) : null}
-        <Select className="w-auto" value={archivedFilter} onChange={(e) => { setActivePreset(null); setArchivedFilter(e.target.value); setPage(1); }}
-          aria-label="Filtrer les prospects archivés">
-          <option value="exclude">Hors archives</option>
-          <option value="only">Archives uniquement</option>
-          <option value="include">Tous</option>
-        </Select>
-        <Select className="w-auto" value={calledFilter} onChange={(e) => { setActivePreset(null); setCalledFilter(e.target.value); setPage(1); }}
-          aria-label="Filtrer par historique d'appel">
-          <option value="all">Tous les prospects</option>
-          <option value="never">Jamais appelés</option>
-          <option value="already">Déjà appelés</option>
-        </Select>
-        <Select className="w-auto" value={dncFilter} onChange={(e) => { setActivePreset(null); setDncFilter(e.target.value); setPage(1); }}
-          aria-label="Filtrer les prospects ayant refusé un appel">
-          <option value="exclude">Appelables uniquement</option>
-          <option value="only">Refus d'appel uniquement</option>
-          <option value="include">Tous</option>
-        </Select>
-        <Select className="w-auto" value={activityFilter} onChange={(e) => { setActivePreset(null); setActivityFilter(e.target.value); setPage(1); }}>
-          <option value="all">Toutes activités</option>
-          {activities.map(a => <option key={a} value={a}>{a}</option>)}
-        </Select>
-        <Select className="w-auto" value={hasSiteFilter} onChange={(e) => { setActivePreset(null); setHasSiteFilter(e.target.value); setPage(1); }}>
-          <option value="all">Tous sites</option>
-          <option value="pas_de_site">Pas de site</option>
-          <option value="site_fonctionnel">Site fonctionnel</option>
-          <option value="site_vetuste">Site vétuste</option>
-        </Select>
-        <Select className="w-auto" value={cityFilter} onChange={(e) => { setActivePreset(null); setCityFilter(e.target.value); setPage(1); }}>
-          <option value="all">Toutes villes</option>
-          <option value="__empty__">Sans ville</option>
-          {cities.map(c => <option key={c} value={c}>{c}</option>)}
-        </Select>
-        <Select
-          className="w-auto"
-          value={hasReviewsFilter === 'all' ? 'all' : (minReviews || 'true')}
-          onChange={(e) => { setActivePreset(null); const v = e.target.value; if (v === 'all') { setHasReviewsFilter('all'); setMinReviews(''); } else if (v === 'true') { setHasReviewsFilter('true'); setMinReviews(''); } else { setHasReviewsFilter('true'); setMinReviews(v); } setPage(1); }}
-        >
-          <option value="all">Tous avis</option>
-          <option value="true">Avec avis</option>
-          <option value="10">10+ avis</option>
-          <option value="50">50+ avis</option>
-          <option value="100">100+ avis</option>
-        </Select>
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">Note min:</span>
-          <Input
-            type="number" min="0" max="5" step="0.5" placeholder="0"
-            value={minRating} onChange={(e) => { setActivePreset(null); setMinRating(e.target.value); setPage(1); }}
-            className="w-20"
-          />
-        </div>
-        <Button onClick={() => { setEditingContact(null); setShowForm(true); }}>
-          <Plus className="h-4 w-4 mr-1" /> Ajouter
-        </Button>
-      </div>
+          {showAdvanced && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2 border-t pt-3">
+              <div>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Historique d'appel</span>
+                <Select value={calledFilter} onChange={(e) => { setActivePreset(null); setCalledFilter(e.target.value); setPage(1); }}
+                  aria-label="Filtrer par historique d'appel">
+                  <option value="all">Tous</option>
+                  <option value="never">Jamais appelés</option>
+                  <option value="already">Déjà appelés</option>
+                </Select>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Appelabilité</span>
+                <Select value={dncFilter} onChange={(e) => { setActivePreset(null); setDncFilter(e.target.value); setPage(1); }}
+                  aria-label="Filtrer les prospects ayant refusé un appel">
+                  <option value="exclude">Appelables uniquement</option>
+                  <option value="only">Refus d'appel uniquement</option>
+                  <option value="include">Tous</option>
+                </Select>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Activité</span>
+                <Select value={activityFilter} onChange={(e) => { setActivePreset(null); setActivityFilter(e.target.value); setPage(1); }}>
+                  <option value="all">Toutes activités</option>
+                  {activities.map(a => <option key={a} value={a}>{a}</option>)}
+                </Select>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Site</span>
+                <Select value={hasSiteFilter} onChange={(e) => { setActivePreset(null); setHasSiteFilter(e.target.value); setPage(1); }}>
+                  <option value="all">Tous sites</option>
+                  <option value="pas_de_site">Pas de site</option>
+                  <option value="site_fonctionnel">Site fonctionnel</option>
+                  <option value="site_vetuste">Site vétuste</option>
+                </Select>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Ville</span>
+                <Select value={cityFilter} onChange={(e) => { setActivePreset(null); setCityFilter(e.target.value); setPage(1); }}>
+                  <option value="all">Toutes villes</option>
+                  <option value="__empty__">Sans ville</option>
+                  {cities.map(c => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Avis</span>
+                <Select
+                  value={hasReviewsFilter === 'all' ? 'all' : (minReviews || 'true')}
+                  onChange={(e) => { setActivePreset(null); const v = e.target.value; if (v === 'all') { setHasReviewsFilter('all'); setMinReviews(''); } else if (v === 'true') { setHasReviewsFilter('true'); setMinReviews(''); } else { setHasReviewsFilter('true'); setMinReviews(v); } setPage(1); }}
+                >
+                  <option value="all">Tous avis</option>
+                  <option value="true">Avec avis</option>
+                  <option value="10">10+ avis</option>
+                  <option value="50">50+ avis</option>
+                  <option value="100">100+ avis</option>
+                </Select>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-muted-foreground">Note min.</span>
+                <Input
+                  type="number" min="0" max="5" step="0.5" placeholder="0"
+                  value={minRating} onChange={(e) => { setActivePreset(null); setMinRating(e.target.value); setPage(1); }}
+                />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Bulk actions bar */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -617,7 +666,6 @@ export function ContactsPage() {
           </Button>
         )}
         <div className="flex-1" />
-        <span className="text-sm text-muted-foreground">{total} prospects</span>
         <Button size="sm" variant="outline" onClick={handleExport}>
           <Download className="h-3 w-3 mr-1" /> Export CSV
         </Button>
