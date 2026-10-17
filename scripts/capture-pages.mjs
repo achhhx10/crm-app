@@ -14,6 +14,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 const APP = process.env.APP_URL || 'http://localhost:5173';
+// On the Vercel front there is no /api proxy: in-page fetches must target the
+// Railway API directly (same origin the app itself uses cross-origin).
+const IN_PAGE_API = (process.env.IN_PAGE_API_URL || (APP.startsWith('http://localhost') ? '/api' : 'https://crm-app-production-9a59.up.railway.app/api')).replace(/\/$/, '');
 const [email, password] = [process.env.CRM_EMAIL, process.env.CRM_PASSWORD];
 const CHROME_CANDIDATES = [
   '/Users/devops/.cache/puppeteer/chrome-headless-shell/mac-139.0.7258.138/chrome-headless-shell-mac-x64/chrome-headless-shell',
@@ -60,6 +63,9 @@ if (!up) {
 const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${port}`, defaultViewport: null });
 const page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 950, deviceScaleFactor: 2 });
+// Mid-rollout the PWA service worker can serve a superseded bundle whose
+// asset hashes no longer exist on the CDN, so lazy routes white-screen.
+await page.setBypassServiceWorker(true);
 
 let failed = 0;
 const ok = (label, cond, detail = '') => {
@@ -104,14 +110,13 @@ try {
   await page.screenshot({ path: '.shots/page-settings.png' });
 
   // 2 — Contact detail (admin: edit + call + deals)
-  const contactId = await page.evaluate(async () => {
-    const t = JSON.parse(localStorage.getItem('crm_user') || '{}');
-    const res = await fetch('/api/contacts?limit=1&sortBy=opportunity&sortDir=desc', {
+  const contactId = await page.evaluate(async (apiBase) => {
+    const res = await fetch(`${apiBase}/contacts?limit=1&sortBy=opportunity&sortDir=desc`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
     });
     const data = await res.json();
     return data.contacts?.[0]?.id ?? null;
-  });
+  }, IN_PAGE_API);
   ok('detail : contact trouvé', contactId !== null);
   await gotoWithShell(`${APP}/contacts/${contactId}`);
   await new Promise(r => setTimeout(r, 1500));
@@ -142,13 +147,13 @@ try {
   // 3 — Deals edit dialog. The database can legitimately hold zero deals, so
   // the check seeds one through the API and removes it afterwards: nothing is
   // left in the books, but the dialog is exercised for real.
-  const seedDeal = await page.evaluate(async () => {
+  const seedDeal = await page.evaluate(async (apiBase) => {
     try {
       const auth = { Authorization: `Bearer ${localStorage.getItem('crm_token')}`, 'Content-Type': 'application/json' };
-      const cRes = await fetch('/api/contacts?limit=1', { headers: { Authorization: auth.Authorization } });
+      const cRes = await fetch(`${apiBase}/contacts?limit=1`, { headers: { Authorization: auth.Authorization } });
       const contact = (await cRes.json()).contacts?.[0];
       if (!contact) return null;
-      const res = await fetch('/api/deals', {
+      const res = await fetch(`${apiBase}/deals`, {
         method: 'POST',
         headers: auth,
         body: JSON.stringify({ contactId: contact.id, amount: 1234.5, siteType: 'vitrine_simple', status: 'en_cours' }),
@@ -158,7 +163,7 @@ try {
     } catch {
       return null;
     }
-  });
+  }, IN_PAGE_API);
 
   if (seedDeal?.id) {
     await gotoWithShell(`${APP}/deals`);
@@ -177,13 +182,13 @@ try {
 
   // Cleanup regardless of the dialog result, so the books stay untouched.
   if (seedDeal?.id) {
-    const del = await page.evaluate(async (dealId) => {
-      const res = await fetch(`/api/deals/${dealId}`, {
+    const del = await page.evaluate(async (apiBase, dealId) => {
+      const res = await fetch(`${apiBase}/deals/${dealId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${localStorage.getItem('crm_token')}` },
       });
       return res.status;
-    }, seedDeal.id);
+    }, IN_PAGE_API, seedDeal.id);
     ok('deals : deal semé supprimé (nettoyage)', del === 200, `status=${del}`);
   }
 
